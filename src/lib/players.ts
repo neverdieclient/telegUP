@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase, onlineEnabled } from "../lib/supabase";
+import { authError } from "./authError";
 
 export type PlayerRow = {
   id: string;
@@ -31,7 +32,7 @@ export async function signUp(email: string, password: string, username: string) 
     password,
     options: { data: { username: clean } },
   });
-  if (error) return { error: error.message };
+  if (error) return { error: authError(error.message) };
   if (data.user) {
     // the row lives behind RLS; if email confirmation is on, there is no session
     // yet and the insert will be rejected — useAccountMirror retries on sign-in
@@ -43,7 +44,7 @@ export async function signUp(email: string, password: string, username: string) 
 export async function signIn(email: string, password: string) {
   if (!supabase) return { error: "Онлайн не подключён" };
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: error.message };
+  if (error) return { error: authError(error.message) };
   return {};
 }
 

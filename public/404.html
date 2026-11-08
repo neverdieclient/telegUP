@@ -1,0 +1,14 @@
+# neverdieclient.github.io/telegUP — SPA fallback
+#
+# The app uses HashRouter, so every real URL is `/telegUP/` and the fragment
+# carries the route. A 404 is still served for unknown paths; bounce it to the
+# app root so a stale link never shows GitHub's page.
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>telegUP</title>
+    <meta http-equiv="refresh" content="0; url=./" />
+  </head>
+  <body></body>
+</html>
