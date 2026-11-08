@@ -64,6 +64,12 @@ export type Profile = {
   purchasedUsernames: string[];
   /** second, collectible username shown under the main one */
   collectibleUsername: string | null;
+  /**
+   * The nickname the player picked themselves. The account mirror only fills
+   * `nickname` from the registration name while this is empty, so a rename is
+   * never reverted.
+   */
+  customNickname: boolean;
 };
 
 type State = {
@@ -139,7 +145,10 @@ type State = {
   sellUsername: (username: string, price: number) => boolean;
 
   // ---- actions: profile ----
+  /** Rename, remembering that this was a deliberate choice. */
   setNickname: (name: string) => void;
+  /** Internal: adopt the account name without flagging it as custom. */
+  adoptNickname: (name: string) => void;
   setMainUsername: (username: string) => boolean;
   setCollectibleUsername: (username: string | null) => void;
   setAnonymousNumber: (value: boolean) => void;
@@ -192,6 +201,7 @@ export const initialState = {
   inventory: [] as InventoryItem[],
   profile: {
     nickname: "telegup_user",
+      customNickname: false,
     tier: "Free" as const,
     badge: null,
     badges: [] as BadgeId[],
@@ -367,6 +377,7 @@ export const useGame = create<State>()(
           profile: {
             ...s.profile,
             nickname: username,
+            customNickname: true,
             purchasedUsernames: [...s.profile.purchasedUsernames, username],
           },
         }));
@@ -438,6 +449,14 @@ export const useGame = create<State>()(
       setNickname: (name) =>
         set((s) => {
           const clean = name.replace(/^@/, "").replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24);
+          return { profile: { ...s.profile, nickname: clean, customNickname: true } };
+        }),
+
+      adoptNickname: (name) =>
+        set((s) => {
+          if (s.profile.customNickname) return {};
+          const clean = name.replace(/^@/, "").replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24);
+          if (!clean) return {};
           return { profile: { ...s.profile, nickname: clean } };
         }),
 
@@ -446,7 +465,7 @@ export const useGame = create<State>()(
         if (!profile.purchasedUsernames.includes(username)) return false;
         // don't allow the same name for both slots
         const collectible = profile.collectibleUsername === username ? null : profile.collectibleUsername;
-        set((s) => ({ profile: { ...s.profile, nickname: username, collectibleUsername: collectible } }));
+        set((s) => ({ profile: { ...s.profile, nickname: username, customNickname: true, collectibleUsername: collectible } }));
         return true;
       },
 
@@ -552,7 +571,7 @@ export const useGame = create<State>()(
     }),
     {
       name: "telegup:state:v2",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
@@ -570,6 +589,7 @@ export const useGame = create<State>()(
           purchasedUsernames: s.profile?.purchasedUsernames ?? [],
           collectibleUsername: s.profile?.collectibleUsername ?? null,
           phoneNumber: s.profile?.phoneNumber ?? null,
+          customNickname: Boolean(s.profile?.customNickname),
         };
         if (profile.anonymousNumber && !profile.phoneNumber) profile.phoneNumber = generateAnonymousNumber();
         // older saves could carry the mark after the tier was removed — drop

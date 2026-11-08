@@ -1,13 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useGame } from "../store/useGame";
-import { BADGES, BADGE_BY_ID, DISCLAIMER, GIFTS, RARITY_META } from "../data/gifts";
+import { BADGES, BADGE_BY_ID, DISCLAIMER, GIFT_BY_ID, GIFTS, RARITY_META, type BadgeId } from "../data/gifts";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
 import { Button } from "../components/ui/Button";
 import { useAuth } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
-import { grantMark, searchPlayers, type PlayerRow } from "../lib/players";
+import {
+  adminGiveBadge,
+  adminGiveStars,
+  adminSetTier,
+  adminTakeBadge,
+  adminTakeMark,
+  fetchPlayer,
+  fetchTop,
+  grantMark,
+  searchPlayers,
+  sendGift,
+  type PlayerRow,
+} from "../lib/players";
 import { getLocalSession, localSignIn, isOwnerEmail, verifyOwner } from "../lib/localAuth";
 
 /**
@@ -53,6 +65,34 @@ function Panel({
       </div>
       {children}
     </section>
+  );
+}
+
+/** Small pill used for the account action rows. */
+function Chip({
+  on,
+  onClick,
+  children,
+  title,
+}: {
+  on?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-xl border px-2 py-1.5 text-[11px] font-bold transition-colors ${
+        on
+          ? "border-neon/35 bg-neon/[0.08] text-white"
+          : "border-white/8 text-white/45 hover:border-neon/25 hover:text-white"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -178,6 +218,56 @@ function Locked() {
   );
 }
 
+/** Leaderboard picker: click a row to load that player into the action panel. */
+function TopPlayers({ onPick }: { onPick: (p: PlayerRow) => void }) {
+  const [rows, setRows] = useState<PlayerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let dead = false;
+    fetchTop(20).then((r) => {
+      if (!dead) {
+        setRows(Array.isArray(r) ? r : []);
+        setLoading(false);
+      }
+    });
+    return () => {
+      dead = true;
+    };
+  }, []);
+
+  if (!onlineEnabled)
+    return (
+      <p className="py-6 text-center text-[11px] text-white/25">
+        Лидерборд появится, когда подключена онлайн-база.
+      </p>
+    );
+
+  if (loading) return <p className="py-6 text-center text-[11px] text-white/25">Загрузка…</p>;
+
+  return (
+    <div className="max-h-72 space-y-1 overflow-y-auto">
+      {rows.map((p, i) => (
+        <button
+          key={p.id}
+          onClick={() => onPick(p)}
+          className="flex w-full items-center gap-2 rounded-xl border border-white/8 bg-black/25 px-2.5 py-2 text-left hover:border-mythic/30 hover:bg-white/[0.04]"
+        >
+          <span className="w-5 shrink-0 text-[10.5px] font-black tabular-nums text-white/30">{i + 1}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="truncate text-[12px] font-bold">@{p.nickname}</span>
+            {p.tier === "Premium" && <CheckMark kind="premium" size={12} />}
+          </span>
+          <span className="shrink-0 text-[10px] tabular-nums text-white/35">
+            {p.inventory_value.toLocaleString("ru-RU")}★
+          </span>
+        </button>
+      ))}
+      {!rows.length && <p className="py-6 text-center text-[11px] text-white/25">Пока пусто</p>}
+    </div>
+  );
+}
+
 export default function Admin() {
   const { isOwner, checked, user } = useIsOwner();
   // local unlock bumps this to re-render; the gate itself comes from localStorage
@@ -193,6 +283,7 @@ export default function Admin() {
   const adminGrantBadge = useGame((s) => s.adminGrantBadge);
   const adminRevokeBadge = useGame((s) => s.adminRevokeBadge);
   const adminGrantPremium = useGame((s) => s.adminGrantPremium);
+  const adminGrantAllGifts = useGame((s) => s.adminGrantAllGifts);
   const adminClearInventory = useGame((s) => s.adminClearInventory);
   const adminReset = useGame((s) => s.adminReset);
   const toggleMark = useGame((s) => s.toggleMark);
@@ -206,9 +297,14 @@ export default function Admin() {
   // player lookup for granting to other players
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [playerQuery, setPlayerQuery] = useState("");
+  /** account currently being acted on (from the search list) */
+  const [target, setTarget] = useState<PlayerRow | null>(null);
+  const [targetGiftQuery, setTargetGiftQuery] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isOwner || playerQuery.trim().length < 2) {
+    if (!isOwner) return;
+    if (playerQuery.trim().length < 2) {
       setPlayers([]);
       return;
     }
@@ -218,6 +314,13 @@ export default function Admin() {
     return () => window.clearTimeout(t);
   }, [isOwner, playerQuery]);
 
+  // the selected account must follow its row when the list refreshes
+  useEffect(() => {
+    if (!target) return;
+    const fresh = players.find((p) => p.id === target.id);
+    if (fresh) setTarget(fresh);
+  }, [players, target]);
+
   const found = giftQuery.trim()
     ? GIFTS.filter(
         (g) =>
@@ -225,6 +328,104 @@ export default function Admin() {
           g.variant.toLowerCase().includes(giftQuery.trim().toLowerCase()),
       ).slice(0, 24)
     : [];
+
+  const targetGifts = useMemo(() => {
+    const q = targetGiftQuery.trim().toLowerCase();
+    if (!q) return [];
+    return GIFTS.filter((g) => g.name.toLowerCase().includes(q) || g.variant.toLowerCase().includes(q)).slice(0, 24);
+  }, [targetGiftQuery]);
+
+  /* ------------------------------------------------ remote actions */
+  /** Runs an online call with a spinner + one toast at the end. */
+  const run = async (key: string, label: string, fn: () => Promise<{ error?: string }>) => {
+    setBusy(key);
+    const res = await fn();
+    setBusy(null);
+    if (res?.error) toast({ kind: "error", title: "Не вышло", message: res.error });
+    else toast({ kind: "success", title: label });
+  };
+
+  const targetId = target?.id ?? user?.id ?? "";
+  const isSelf = !target || target.id === user?.id;
+
+  /** Re-read the selected account from the DB after a grant. */
+  const refreshTarget = async (id: string) => {
+    const fresh = await fetchPlayer(id);
+    if (fresh) setTarget(fresh);
+    return fresh;
+  };
+
+  /** Send a gift from the owner account into the selected player's inbox. */
+  const giveGiftToTarget = async (giftId: string) => {
+    const gift = GIFT_BY_ID[giftId];
+    if (!gift || !user || !target) return;
+    await run(`gift:${giftId}`, `Подарок «${gift.name}» → @${target.nickname}`, async () => {
+      const res = await sendGift({
+        fromId: user.id,
+        fromName: profile.nickname,
+        toId: target.id,
+        toName: target.nickname,
+        giftId,
+        giftName: gift.variant === "Gift" ? gift.name : `${gift.name} · ${gift.variant}`,
+        giftStars: gift.stars,
+        message: "Подарок от владельца",
+      });
+      return res;
+    });
+    setTargetGiftQuery("");
+  };
+
+  const giveStarsToTarget = async (n: number) => {
+    if (!target) {
+      adminGrantStars(n);
+      toast({ kind: "success", title: `${n > 0 ? "+" : ""}${n.toLocaleString("ru-RU")} ★ себе` });
+      return;
+    }
+    await run(`stars:${n}`, `${n > 0 ? "+" : ""}${n.toLocaleString("ru-RU")} ★ → @${target.nickname}`, () =>
+      adminGiveStars(target.id, n),
+    );
+    void refreshTarget(target.id);
+  };
+
+  const giveMarkToTarget = async (mark: CheckMarkKind, label: string, on = true) => {
+    if (!target) return;
+    await run(
+      `mark:${mark}`,
+      `${on ? "Знак" : "Снять знак"} «${label}» → @${target.nickname}`,
+      () => (on ? grantMark(target.id, mark) : adminTakeMark(target.id, mark)),
+    );
+    void refreshTarget(target.id);
+  };
+
+  const giveBadgeToTarget = async (badge: string, label: string, on: boolean) => {
+    if (!target) return;
+    await run(
+      `badge:${badge}`,
+      `${on ? "Бейдж" : "Снять бейдж"} «${label}» → @${target.nickname}`,
+      () => (on ? adminGiveBadge(target.id, badge) : adminTakeBadge(target.id, badge)),
+    );
+    void refreshTarget(target.id);
+  };
+
+  const setTargetTier = async (premium: boolean) => {
+    if (!target) return;
+    await run(`tier`, `@${target.nickname}: ${premium ? "Premium" : "Free"}`, () =>
+      adminSetTier(target.id, premium ? "Premium" : "Free"),
+    );
+    void refreshTarget(target.id);
+  };
+
+  /** Local "give to myself" — the gift lands in this browser's inventory. */
+  const giveSelfGift = (giftId: string) => {
+    const gift = GIFT_BY_ID[giftId];
+    if (!gift) return;
+    addItem(giftId, "admin");
+    toast({ kind: "gift", title: gift.name, message: gift.variant });
+  };
+
+  const selfTier = isSelf ? profile.tier : target?.tier === "Premium" ? "Premium" : "Free";
+  const selfMarks = isSelf ? profile.marks : target?.marks ?? [];
+  const selfBadges = isSelf ? profile.badges : target?.badges ?? [];
 
   // the unlock state is written to localStorage, not to a hook, so read it
   // here as well; `unlockTick` is what makes the next render pick it up
@@ -246,7 +447,7 @@ export default function Admin() {
           </p>
           <h1 className="mt-1 font-display text-3xl font-black tracking-tight">Админ-панель</h1>
           <p className="mt-1 text-[12.5px] text-white/35">
-            {user?.email} · выдача подарков и знаков игрокам
+            выдача подарков и знаков игрокам
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
@@ -257,88 +458,232 @@ export default function Admin() {
       </header>
 
       <div className="grid gap-3.5 lg:grid-cols-2">
-        {/* ---------------- players + marks ---------------- */}
+        {/* ---------------- account picker ---------------- */}
         <Panel
-          title="Игроки и знаки"
-          desc="Найди игрока по нику и выдай ему знак верификации."
-          badge="players"
+          title="Выбрать аккаунт"
+          desc="Найди игрока и выдай ему подарок, звёзды, бейдж или знак."
+          badge="accounts"
         >
-          <input
-            value={playerQuery}
-            onChange={(e) => setPlayerQuery(e.target.value)}
-            placeholder="Ник или юзернейм"
-            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
-          />
-          {!onlineEnabled && (
-            <p className="mt-2 rounded-xl border border-white/8 bg-black/30 px-3 py-2 text-[11px] text-white/30">
-              Онлайн-база не подключена — доступен только локальный профиль ниже.
-            </p>
-          )}
-          <div className="mt-2 max-h-60 space-y-1 overflow-y-auto">
-            {players.map((p) => (
-              <div key={p.id} className="rounded-xl border border-white/8 bg-black/25 p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[12px] font-bold">
-                    @{p.nickname}
-                  </span>
-                  <span className="shrink-0 text-[10px] tabular-nums text-white/30">
-                    {p.inventory_value.toLocaleString("ru-RU")}★
-                  </span>
-                </div>
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {MARK_LIST.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={async () => {
-                        const res = await grantMark(p.id, m.id);
-                        if (res?.error) {
-                          toast({ kind: "error", title: "Не удалось", message: res.error });
-                        } else {
-                          toast({ kind: "success", title: `Знак «${m.label}» → @${p.nickname}` });
-                        }
-                      }}
-                      className="flex items-center gap-1 rounded-lg border border-white/8 px-1.5 py-1 text-[10px] font-bold text-white/55 hover:border-neon/30 hover:text-white"
-                    >
-                      <CheckMark kind={m.id} size={12} />
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {playerQuery.trim().length >= 2 && players.length === 0 && (
-              <p className="py-3 text-center text-[11px] text-white/25">Никого не нашли</p>
+          <div className="flex gap-2">
+            <input
+              value={playerQuery}
+              onChange={(e) => setPlayerQuery(e.target.value)}
+              placeholder={onlineEnabled ? "Ник или юзернейм (мин. 2 символа)" : "Только офлайн — своего профиля"}
+              disabled={!onlineEnabled}
+              className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40 disabled:opacity-40"
+            />
+            {target && (
+              <Button size="sm" variant="ghost" onClick={() => setTarget(null)}>
+                Сброс
+              </Button>
             )}
           </div>
 
-          <div className="mt-3 border-t border-white/6 pt-3">
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
-              мой профиль
+          {!onlineEnabled && (
+            <p className="mt-2 rounded-xl border border-white/8 bg-black/30 px-3 py-2 text-[11px] text-white/30">
+              Онлайн-база не подключена — действия применяются к твоему локальному профилю.
+            </p>
+          )}
+
+          {!target && (
+            <div className="mt-2 max-h-52 space-y-1 overflow-y-auto">
+              {players.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setTarget(p)}
+                  className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/8 bg-black/25 px-2.5 py-2 text-left hover:border-neon/30 hover:bg-white/[0.04]"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-[12px] font-bold">@{p.nickname}</span>
+                    {p.tier === "Premium" && <CheckMark kind="premium" size={12} />}
+                  </span>
+                  <span className="shrink-0 text-[10px] tabular-nums text-white/30">
+                    {p.stars.toLocaleString("ru-RU")}★ · {p.items} шт
+                  </span>
+                </button>
+              ))}
+              {onlineEnabled && playerQuery.trim().length >= 2 && players.length === 0 && (
+                <p className="py-3 text-center text-[11px] text-white/25">Никого не нашли</p>
+              )}
+              {onlineEnabled && playerQuery.trim().length < 2 && (
+                <p className="py-3 text-center text-[11px] text-white/25">
+                  Введи ник — или выбери «себя» ниже
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ---- selected account ---- */}
+          <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-[12.5px] font-extrabold">
+                  <span className="truncate">@{target ? target.nickname : profile.nickname}</span>
+                  {selfTier === "Premium" && <CheckMark kind="premium" size={13} />}
+                </p>
+                <p className="mt-0.5 text-[10.5px] text-white/30">
+                  {target ? (
+                    <>
+                      {target.stars.toLocaleString("ru-RU")}★ · {target.items} предметов · {target.inventory_value.toLocaleString("ru-RU")}★ коллекция
+                    </>
+                  ) : (
+                    <>{stars.toLocaleString("ru-RU")}★ · {inventory.length} предметов · мой профиль</>
+                  )}
+                </p>
+                <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-white/25">
+                  {selfTier === "Premium" ? "Premium" : "Free"}
+                  {selfBadges.length > 0 && ` · ${selfBadges.map((b) => BADGE_BY_ID[b as BadgeId]?.label ?? b).join(", ")}`}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-md border border-neon/25 bg-neon/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-neon">
+                {target ? "выбран" : "я"}
+              </span>
+            </div>
+
+            {/* stars */}
+            <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">звёзды</p>
+            <div className="flex items-end gap-2">
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(Number(e.target.value) || 0)}
+                className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12.5px] font-bold tabular-nums outline-none focus:border-neon/40"
+              />
+              <Button
+                size="sm"
+                disabled={busy === `stars:${amount}` || !targetId}
+                onClick={() => giveStarsToTarget(amount)}
+              >
+                +★
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy === `stars:${-amount}` || !targetId}
+                onClick={() => giveStarsToTarget(-amount)}
+              >
+                −★
+              </Button>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {[1_000, 10_000, 100_000, 1_000_000].map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setAmount(v)}
+                  className="rounded-lg border border-white/8 px-2 py-1 text-[10px] font-bold text-white/45 hover:border-neon/25 hover:text-white"
+                >
+                  {v.toLocaleString("ru-RU")}
+                </button>
+              ))}
+            </div>
+
+            {/* verification marks */}
+            <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+              знаки
             </p>
             <div className="flex flex-wrap gap-1.5">
               {MARK_LIST.map((m) => {
-                // premium is driven by the tier, everything else by the mark list
-                const on =
-                  m.id === "premium" ? profile.tier === "Premium" : profile.marks.includes(m.id);
+                const on = m.id === "premium" ? selfTier === "Premium" : selfMarks.includes(m.id);
+                const click = () => {
+                  if (isSelf) {
+                    // premium goes through the tier so the tick cannot come back
+                    if (m.id === "premium") adminGrantPremium(profile.tier !== "Premium");
+                    else toggleMark(m.id);
+                    return;
+                  }
+                  if (m.id === "premium") setTargetTier(selfTier !== "Premium");
+                  else giveMarkToTarget(m.id, m.label, !on);
+                };
+                return (
+                  <Chip key={m.id} on={on} onClick={click} title={on ? "Снять" : "Выдать"}>
+                    <CheckMark kind={m.id} size={13} />
+                    {m.label}
+                  </Chip>
+                );
+              })}
+            </div>
+
+            {/* badges */}
+            <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+              бейджи
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              {BADGES.map((b) => {
+                const on = selfBadges.includes(b.id);
                 return (
                   <button
-                    key={m.id}
-                    onClick={() => toggleMark(m.id)}
-                    className={`flex items-center gap-1.5 rounded-xl border px-2 py-1.5 text-[11px] font-bold transition-colors ${
-                      on ? "border-neon/30 bg-neon/[0.08] text-white" : "border-white/8 text-white/45 hover:text-white"
+                    key={b.id}
+                    onClick={() => {
+                      if (isSelf) (on ? adminRevokeBadge(b.id) : adminGrantBadge(b.id));
+                      else giveBadgeToTarget(b.id, b.label, !on);
+                    }}
+                    className={`flex items-center justify-between gap-1 rounded-xl border px-2 py-1.5 text-left ${
+                      on ? "bg-white/[0.06]" : "border-white/8 hover:bg-white/[0.04]"
                     }`}
+                    style={on ? { borderColor: `${b.color}66` } : undefined}
                   >
-                    <CheckMark kind={m.id} size={14} />
-                    {m.label}
+                    <span className="truncate text-[10.5px] font-bold" style={{ color: b.color }}>
+                      {b.label}
+                    </span>
+                    <span className="text-[9px] text-white/30">{on ? "✓" : ""}</span>
                   </button>
                 );
               })}
             </div>
+
+            {/* gift to the selected account */}
+            <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+              подарок {target ? `→ @${target.nickname}` : "→ себе"}
+            </p>
+            {!target && (
+              <p className="mb-1.5 text-[10.5px] leading-relaxed text-white/25">
+                Выбери аккаунт выше, чтобы отправить подарок игроку. Без выбора подарок падает в твой инвентарь.
+              </p>
+            )}
+            <input
+              value={targetGiftQuery}
+              onChange={(e) => setTargetGiftQuery(e.target.value)}
+              placeholder="Plush Pepe, Durov, Heart…"
+              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+            />
+            <div className="mt-2 grid max-h-44 grid-cols-3 gap-1.5 overflow-y-auto sm:grid-cols-4">
+              {targetGifts.map((g) => (
+                <button
+                  key={g.id}
+                  disabled={busy === `gift:${g.id}`}
+                  onClick={() => (target ? giveGiftToTarget(g.id) : giveSelfGift(g.id))}
+                  className={`flex flex-col items-center rounded-xl border p-1.5 disabled:opacity-40 ${RARITY_META[g.rarity].ring} hover:bg-white/5`}
+                >
+                  <GiftArt gift={g} size={30} rounded="rounded-md" />
+                  <p className="mt-0.5 w-full truncate text-center text-[8.5px] font-bold text-white/60">
+                    {g.variant === "Gift" ? g.name : g.variant}
+                  </p>
+                </button>
+              ))}
+              {!targetGifts.length && (
+                <p className="col-span-3 py-4 text-center text-[11px] text-white/25 sm:col-span-4">
+                  Введи название подарка
+                </p>
+              )}
+            </div>
           </div>
         </Panel>
 
+        {/* ---------------- top players ---------------- */}
+        <Panel
+          title="Топ игроков"
+          desc="Быстрый выбор из лидерборда — по ценности коллекции."
+          badge="top"
+        >
+          <TopPlayers onPick={(p) => setTarget(p)} />
+        </Panel>
+
         {/* ---------------- gifts ---------------- */}
-        <Panel title="Выдать подарки" desc="Поиск по всей базе реальных подарков Telegram." badge="gifts">
+        <Panel
+          title={target ? `Подарок → @${target.nickname}` : "Выдать подарки"}
+          desc="Поиск по всей базе реальных подарков Telegram."
+          badge="gifts"
+        >
           <input
             value={giftQuery}
             onChange={(e) => setGiftQuery(e.target.value)}
@@ -349,11 +694,9 @@ export default function Admin() {
             {found.map((g) => (
               <button
                 key={g.id}
-                onClick={() => {
-                  addItem(g.id, "admin");
-                  toast({ kind: "gift", title: g.name, message: g.variant });
-                }}
-                className={`flex flex-col items-center rounded-xl border p-1.5 ${RARITY_META[g.rarity].ring} hover:bg-white/5`}
+                disabled={busy === `gift:${g.id}`}
+                onClick={() => (target ? giveGiftToTarget(g.id) : giveSelfGift(g.id))}
+                className={`flex flex-col items-center rounded-xl border p-1.5 disabled:opacity-40 ${RARITY_META[g.rarity].ring} hover:bg-white/5`}
               >
                 <GiftArt gift={g} size={34} rounded="rounded-md" />
                 <p className="mt-0.5 w-full truncate text-center text-[8.5px] font-bold text-white/60">
@@ -369,50 +712,24 @@ export default function Admin() {
           </div>
         </Panel>
 
-        {/* ---------------- economy ---------------- */}
-        <Panel title="Экономика" desc="Звёзды и бейджи локального профиля." badge="stars">
-          <div className="flex items-end gap-2">
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(Number(e.target.value) || 0)}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12.5px] font-bold tabular-nums outline-none focus:border-neon/40"
-            />
-            <Button size="sm" onClick={() => adminGrantStars(amount)}>
-              +★
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => adminGrantStars(-amount)}>
-              −★
-            </Button>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-1.5">
-            {BADGES.map((b) => {
-              const on = profile.badges.includes(b.id);
-              return (
-                <button
-                  key={b.id}
-                  onClick={() => (on ? adminRevokeBadge(b.id) : adminGrantBadge(b.id))}
-                  className={`flex items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-left ${
-                    on ? "bg-white/[0.06]" : "border-white/8 hover:bg-white/[0.04]"
-                  }`}
-                  style={on ? { borderColor: `${b.color}66` } : undefined}
-                >
-                  <span className="truncate text-[11px] font-bold" style={{ color: b.color }}>
-                    {b.label}
-                  </span>
-                  <span className="text-[9px] text-white/30">{BADGE_BY_ID[b.id] ? (on ? "✓" : "") : ""}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
+        {/* ---------------- maintenance (self only) ---------------- */}
+        <Panel
+          title="Обслуживание"
+          desc="Действия на твоём профиле. Выдача другим игрокам — в панели «Выбрать аккаунт»."
+          badge="self"
+        >
+          <div className="grid grid-cols-2 gap-2">
             <Button size="sm" variant="violet" onClick={() => adminGrantPremium(profile.tier !== "Premium")}>
               {profile.tier === "Premium" ? "Снять Premium" : "Выдать Premium"}
             </Button>
+            <Button size="sm" variant="ghost" onClick={adminGrantAllGifts}>
+              Выдать все подарки
+            </Button>
             <Button size="sm" variant="ghost" onClick={adminClearInventory}>
               Очистить инвентарь
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => adminGrantStars(-stars)}>
+              Обнулить баланс
             </Button>
           </div>
           <Button full size="sm" variant="danger" className="mt-2" onClick={() => setConfirmReset(true)}>

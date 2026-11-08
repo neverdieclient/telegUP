@@ -83,6 +83,49 @@ export async function grantMark(
   return error ? { error: error.message } : {};
 }
 
+/** Read one profile row by its account id. */
+export async function fetchPlayer(id: string): Promise<PlayerRow | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("profiles").select("*").eq("id", id).maybeSingle();
+  if (error || !data) return null;
+  return data as PlayerRow;
+}
+
+/**
+ * Owner-side offence on another player's row: stars, badges and the premium
+ * tier. `grant_mark`/RLS only let a player write their own row, so these go
+ * through the `owner_give_*` functions below (SECURITY DEFINER, owner-only).
+ */
+export async function adminGiveStars(targetId: string, amount: number): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_give_stars", { target_id: targetId, amount: Math.round(amount) });
+  return error ? { error: error.message } : {};
+}
+
+export async function adminTakeMark(targetId: string, mark: string): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_take_mark", { target_id: targetId, mark });
+  return error ? { error: error.message } : {};
+}
+
+export async function adminGiveBadge(targetId: string, badge: string): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_give_badge", { target_id: targetId, badge });
+  return error ? { error: error.message } : {};
+}
+
+export async function adminTakeBadge(targetId: string, badge: string): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_take_badge", { target_id: targetId, badge });
+  return error ? { error: error.message } : {};
+}
+
+export async function adminSetTier(targetId: string, tier: "Premium" | "Free"): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_set_tier", { target_id: targetId, tier });
+  return error ? { error: error.message } : {};
+}
+
 /** Top players ordered by their inventory value (fallback: stars). */
 export async function fetchTop(limit = 50): Promise<PlayerRow[]> {
   if (!supabase) return [];
