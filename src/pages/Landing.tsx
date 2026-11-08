@@ -251,7 +251,7 @@ export default function Landing() {
         <div className="mt-14 flex flex-col items-center gap-6 rounded-3xl border border-white/8 bg-gradient-to-b from-white/[0.05] to-transparent p-8 text-center">
           <StarIcon className="size-7 text-neon" />
           <h3 className="max-w-xl font-display text-2xl font-black tracking-tight metal-text md:text-3xl">
-            Готов начать с 5 000 звёзд?
+            Готов начать с 500 звёзд?
           </h3>
           <Link
             to="/app"

@@ -183,7 +183,7 @@ export default function Auth() {
 
           <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-white/25">
             <StarIcon className="size-3 text-neon/60" />
-            <span>5000 ★ на старте · без реальных денег</span>
+            <span>500 ★ на старте · без реальных денег</span>
           </div>
         </div>
 

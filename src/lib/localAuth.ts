@@ -103,6 +103,13 @@ export function localSignIn(
   password: string,
 ): { error?: string; account?: Omit<LocalAccount, "hash" | "salt"> } {
   const cleanEmail = email.trim().toLowerCase();
+  // the owner is not a row in the local account list — the password is checked
+  // against the constant in this module instead
+  if (isOwnerEmail(cleanEmail)) {
+    if (!verifyOwner(cleanEmail, password)) return { error: "Неверный пароль" };
+    setLocalSession(cleanEmail);
+    return { account: { email: cleanEmail, username: "OWNER", createdAt: 0 } };
+  }
   const accounts = readAccounts();
   const found = accounts.find((a) => a.email === cleanEmail);
   if (!found) return { error: "Аккаунт не найден. Зарегистрируйся." };
@@ -123,7 +130,13 @@ export function getLocalSession(): LocalAccount | null {
   try {
     const email = localStorage.getItem(LS_SESSION);
     if (!email) return null;
-    return readAccounts().find((a) => a.email === email) ?? null;
+    const found = readAccounts().find((a) => a.email === email);
+    // the owner address may never have signed up through the form; keep the
+    // session valid anyway so the panel unlocks after the owner login
+    if (!found && isOwnerEmail(email)) {
+      return { email: OWNER_EMAIL, username: "OWNER", hash: "", salt: "", createdAt: 0 };
+    }
+    return found ?? null;
   } catch {
     return null;
   }

@@ -180,7 +180,11 @@ function Locked() {
 
 export default function Admin() {
   const { isOwner, checked, user } = useIsOwner();
-  const [, forceUnlock] = useState(0);
+  // local unlock bumps this to re-render; the gate itself comes from localStorage
+  // local unlock bumps `forceUnlock` to re-render; the gate itself is in localStorage
+  const [unlockTick, forceUnlock] = useState(0);
+  void unlockTick;
+  const localUnlocked = !onlineEnabled && Boolean(getLocalSession());
   const stars = useGame((s) => s.stars);
   const inventory = useGame((s) => s.inventory);
   const profile = useGame((s) => s.profile);
@@ -222,10 +226,13 @@ export default function Admin() {
       ).slice(0, 24)
     : [];
 
+  // the unlock state is written to localStorage, not to a hook, so read it
+  // here as well; `unlockTick` is what makes the next render pick it up
+  const unlocked = onlineEnabled ? isOwner : localUnlocked;
   if (!checked) {
     return <p className="py-16 text-center text-[12px] text-white/30">Проверка доступа…</p>;
   }
-  if (!isOwner) {
+  if (!unlocked) {
     if (!onlineEnabled) return <LocalUnlock onOk={() => forceUnlock((n) => n + 1)} />;
     return <Locked />;
   }
@@ -310,7 +317,9 @@ export default function Admin() {
             </p>
             <div className="flex flex-wrap gap-1.5">
               {MARK_LIST.map((m) => {
-                const on = profile.marks.includes(m.id);
+                // premium is driven by the tier, everything else by the mark list
+                const on =
+                  m.id === "premium" ? profile.tier === "Premium" : profile.marks.includes(m.id);
                 return (
                   <button
                     key={m.id}

@@ -186,7 +186,7 @@ const emptyStats: Record<StatKey, number> = {
 };
 
 export const initialState = {
-  stars: 5000,
+  stars: 500,
   coins: 0,
   onlineUserId: null as string | null,
   inventory: [] as InventoryItem[],
@@ -466,14 +466,20 @@ export const useGame = create<State>()(
         })),
 
       toggleMark: (mark) =>
-        set((s) => ({
-          profile: {
-            ...s.profile,
-            marks: s.profile.marks.includes(mark)
-              ? s.profile.marks.filter((m) => m !== mark)
-              : [...s.profile.marks, mark],
-          },
-        })),
+        set((s) => {
+          const on = s.profile.marks.includes(mark);
+          const marks = on
+            ? s.profile.marks.filter((m) => m !== mark)
+            : [...s.profile.marks, mark];
+          // the premium mark and the premium tier are the same thing: switching
+          // one off has to drop the tier too, otherwise the tick comes back
+          // from `<CheckMark kind="premium" />` in every header
+          if (mark !== "premium") return { profile: { ...s.profile, marks } };
+          return {
+            profile: { ...s.profile, marks, tier: on ? ("Free" as const) : ("Premium" as const) },
+            shopItems: on ? s.shopItems.filter((i) => i !== "premium") : s.shopItems,
+          };
+        }),
 
       setOnlineUserId: (id) => set({ onlineUserId: id }),
 
@@ -504,7 +510,19 @@ export const useGame = create<State>()(
               ? s.shopItems
               : [...s.shopItems, "premium" as PurchasedShopItem]
             : s.shopItems.filter((i) => i !== "premium");
-          return { profile: { ...s.profile, tier: value ? "Premium" : "Free" }, shopItems };
+          return {
+            profile: {
+              ...s.profile,
+              tier: value ? ("Premium" as const) : ("Free" as const),
+              // keep the stored mark in sync — it is what the profile reads
+              marks: value
+                ? s.profile.marks.includes("premium")
+                  ? s.profile.marks
+                  : [...s.profile.marks, "premium"]
+                : s.profile.marks.filter((m) => m !== "premium"),
+            },
+            shopItems,
+          };
         }),
       adminClearInventory: () => set({ inventory: [] }),
       adminReset: () => {
@@ -554,6 +572,12 @@ export const useGame = create<State>()(
           phoneNumber: s.profile?.phoneNumber ?? null,
         };
         if (profile.anonymousNumber && !profile.phoneNumber) profile.phoneNumber = generateAnonymousNumber();
+        // older saves could carry the mark after the tier was removed — drop
+        // the orphan so the tick really disappears
+        const premiumMarked = profile.marks.includes("premium");
+        if (premiumMarked && profile.tier !== "Premium") {
+          profile.marks = profile.marks.filter((m) => m !== "premium");
+        }
         return {
           ...initialState,
           ...s,
