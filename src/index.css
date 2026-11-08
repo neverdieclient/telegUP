@@ -1,0 +1,185 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Montserrat", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+
+  --color-void: #050506;
+  --color-ink: #0a0a0a;
+  --color-carbon: #121212;
+  --color-graphite: #1a1a1d;
+  --color-steel: #26262b;
+  --color-mute: #8b8b94;
+
+  --color-neon: #a3ff12;
+  --color-neon-dim: #7ac200;
+  --color-violet: #8b5cf6;
+  --color-violet-dim: #6d3fd1;
+
+  --color-common: #9aa0aa;
+  --color-rare: #3b9dff;
+  --color-epic: #b45cff;
+  --color-legendary: #ffb300;
+  --color-mythic: #ff3d6e;
+
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-pulse-soft: pulseSoft 3.5s ease-in-out infinite;
+  --animate-shimmer: shimmer 2.6s linear infinite;
+  --animate-spin-slow: spin 14s linear infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--tilt, 0deg)); }
+  50% { transform: translate3d(0, -18px, 0) rotate(calc(var(--tilt, 0deg) * -1)); }
+}
+
+@keyframes pulseSoft {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.75; transform: scale(1.05); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes gridDrift {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 0 120px, 0 120px; }
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-ink text-white font-sans antialiased;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    background-color: #0a0a0a;
+    background-image:
+      radial-gradient(900px 520px at 50% -12%, rgba(163, 255, 18, 0.07), transparent 70%),
+      radial-gradient(760px 460px at 90% 8%, rgba(139, 92, 246, 0.07), transparent 70%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: rgba(163, 255, 18, 0.28);
+    color: #fff;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0a0a0a;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #26262b;
+    border-radius: 99px;
+    border: 2px solid #0a0a0a;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a3a42;
+  }
+
+  input,
+  button {
+    font-family: inherit;
+  }
+}
+
+@utility metal-text {
+  background-image: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #f2f2f4 34%,
+    #cfcfd6 62%,
+    #8d8d97 84%,
+    #e9e9ee 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+@utility glass {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.012));
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+@utility card-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+@utility grid-bg {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.06) 1px, transparent 0);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, #000 0%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, #000 0%, transparent 78%);
+  animation: gridDrift 26s linear infinite;
+}
+
+/* brand wordmark: white "teleg" + neon "UP" */
+@utility brand-mark {
+  font-family: var(--font-display, inherit);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  background-image: linear-gradient(175deg, #ffffff 0%, #e8e9ee 46%, #a8aab4 72%, #f4f5f8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+@utility brand-up {
+  background-image: linear-gradient(180deg, #c8ff5c 0%, #a3ff12 45%, #7ed400 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 26px rgba(163, 255, 18, 0.45));
+}
+
+/* soft aurora glow used behind hero sections */
+@utility aurora {
+  background:
+    radial-gradient(46% 42% at 18% 12%, rgba(163, 255, 18, 0.16), transparent 62%),
+    radial-gradient(42% 40% at 84% 18%, rgba(139, 92, 246, 0.20), transparent 64%),
+    radial-gradient(60% 55% at 50% 100%, rgba(59, 157, 255, 0.12), transparent 70%);
+  filter: blur(10px);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility text-balance-tight {
+  text-wrap: balance;
+}
+
+/* subtle film grain overlay for depth */
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0.035;
+  mix-blend-mode: screen;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
