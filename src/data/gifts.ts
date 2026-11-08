@@ -123,7 +123,14 @@ export function cleanGradient(gradient: string | null): string | null {
   return gradient.replace(/;\s*$/, "");
 }
 
-const asset = (p: string | null | undefined) => (p ? `/${p.replace(/^\/+/, "")}` : null);
+/**
+ * Files in `public/` are served next to the app, not at the domain root:
+ * on GitHub Pages the site lives under `/telegUP/`, so `/gifts/…` would 404.
+ * Vite injects the configured base here at build time.
+ */
+const BASE = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const asset = (p: string | null | undefined) =>
+  p ? `${BASE}/${p.replace(/^\/+/, "")}` : null;
 
 /**
  * Real TON → Stars rate used for display only.
