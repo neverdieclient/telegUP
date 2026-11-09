@@ -19,15 +19,19 @@ const R = 134;
  */
 const NEEDLE_LEN = R - 46;
 
-/** Payout odds: value of the target divided by value given away. */
-const HOUSE_EDGE = 0.88;
+/**
+ * Payout odds: pure fair roll, no house edge.
+ * Chance = value of the source divided by value of the target, so a 2×
+ * upgrade is a true 50/50 and the shown percent is exactly the real odds.
+ */
+const HOUSE_EDGE = 1.0;
 
 function calcChance(from: Gift, to: Gift) {
   const raw = (from.stars / to.stars) * 100;
   return Math.min(95, Math.max(0.4, raw * HOUSE_EDGE));
 }
 
-/** Preset multipliers: target value = source value × mult, chance = 88 / mult. */
+/** Preset multipliers: target value = source value × mult, chance = 100 / mult. */
 const PRESETS = [1.5, 2, 3, 5, 8, 10, 25, 50, 100] as const;
 
 function presetChance(mult: number) {
@@ -615,8 +619,8 @@ export default function UpgradePage() {
       <div className="flex items-start gap-2.5 rounded-2xl border border-white/7 bg-white/[0.02] p-3.5">
         <StarIcon className="mt-0.5 size-4 shrink-0 text-white/25" />
         <p className="text-[11px] leading-relaxed text-white/30">
-          Шанс = стоимость исходника / стоимость цели × 0.92. Комиссия «казино» — 8%. Внутри одной коллекции модели
-          апгрейдятся друг в друга, как в Telegram.
+          Шанс = стоимость исходника / стоимость цели — честный рандом без комиссии. Например, ×2 — это
+          ровно 50 на 50. Внутри одной коллекции модели апгрейдятся друг в друга, как в Telegram.
           {alwaysWin && " Режим администратора включён: любой апгрейд проходит."}
         </p>
       </div>

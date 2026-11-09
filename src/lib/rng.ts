@@ -154,7 +154,8 @@ export function modelOptions(gift: Gift): Gift[] {
   return GIFTS.filter((g) => g.slug === gift.slug && g.kind === "model");
 }
 
-export const MODEL_HOUSE_EDGE = 0.86;
+/** Fair odds — no house edge on model upgrades either. */
+export const MODEL_HOUSE_EDGE = 1.0;
 
 /**
  * Chance to morph `from` into `to`. Both items belong to the same gift,
