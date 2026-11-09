@@ -4,12 +4,15 @@ import { Layout } from "./components/Layout";
 import { DeviceChooser, useDeviceScope } from "./components/DeviceChooser";
 import { RequireAuth } from "./components/RequireAuth";
 import { RequireOpen } from "./components/RequireOpen";
+import { BannedScreen } from "./components/BannedScreen";
 import Landing from "./pages/Landing";
 import { useGame } from "./store/useGame";
 import { applyTheme } from "./lib/theme";
 import { useStatsSync } from "./lib/useStatsSync";
 import { useAccountMirror } from "./lib/useAccountMirror";
 import { useGiftInbox } from "./lib/useGiftInbox";
+import { useBanGuard } from "./lib/useBanGuard";
+import { useAuth } from "./lib/players";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Cases = lazy(() => import("./pages/Cases"));
@@ -38,11 +41,14 @@ function PageLoader() {
 }
 
 export default function App() {
+  const { user } = useAuth();
   useStatsSync();
   useAccountMirror();
   useGiftInbox();
   useDeviceScope();
+  useBanGuard(user?.id ?? null);
 
+  const banned = useGame((s) => s.banned);
   const theme = useGame((s) => s.theme);
   useEffect(() => {
     applyTheme(theme);
@@ -55,6 +61,11 @@ export default function App() {
     root.classList.toggle("reduce-motion", reduceMotion);
     return () => root.classList.remove("reduce-motion");
   }, [reduceMotion]);
+
+  // Banned account / IP / device: the whole site is replaced by the block
+  // notice — landing, auth, app, admin, everything. This is the visible half;
+  // the database also rejects every write from this caller (see bans.sql).
+  if (banned) return <BannedScreen />;
 
   return (
     <HashRouter>

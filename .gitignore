@@ -20,6 +20,9 @@ dist-ssr
 .q*.sql
 # Videotrailer build artifacts (sources stay tracked, output/frames/renders do not)
 trailer/frames/
+trailer/frames-out/
+trailer/frames-update/
+trailer/preview/
 trailer/*.mp4
 trailer/out/
 

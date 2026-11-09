@@ -13,12 +13,19 @@ import {
   adminSetTier,
   adminTakeBadge,
   adminTakeMark,
+  fetchBans,
+  fetchLoginEvents,
   fetchPlayer,
   fetchTop,
   grantMark,
+  ownerBan,
   ownerDeliverGift,
   ownerSetProfile,
+  ownerUnban,
   searchPlayers,
+  type BanKind,
+  type BanRow,
+  type LoginEventRow,
   type PlayerRow,
 } from "../lib/players";
 import { getLocalSession, localSignIn, isOwnerEmail, verifyOwner } from "../lib/localAuth";
@@ -91,6 +98,204 @@ function Chip({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Bans + login journal. The owner sees every recent login (ip, device, time,
+ * nickname) and can ban by ip / device / account, or lift a ban. Rows are the
+ * offender's last-known identity so a nickname change does not hide them.
+ */
+function BanPanel() {
+  const [bans, setBans] = useState<BanRow[]>([]);
+  const [events, setEvents] = useState<LoginEventRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [manualValue, setManualValue] = useState("");
+  const [manualKind, setManualKind] = useState<BanKind>("ip");
+  const [tab, setTab] = useState<"bans" | "log">("log");
+  const toast = useGame((s) => s.toast);
+
+  const load = async () => {
+    setLoading(true);
+    const [b, e] = await Promise.all([fetchBans(), fetchLoginEvents(200)]);
+    setBans(b);
+    setEvents(e);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const doBan = async (kind: BanKind, value: string, label?: string | null) => {
+    if (!value) return;
+    setBusy(true);
+    const res = await ownerBan(kind, value, label ?? null, null);
+    setBusy(false);
+    if (res.error) {
+      toast({ kind: "error", title: "Не вышло", message: res.error });
+      return;
+    }
+    toast({ kind: "success", title: "Забанен" });
+    void load();
+  };
+
+  const doUnban = async (id: number) => {
+    setBusy(true);
+    const res = await ownerUnban(id);
+    setBusy(false);
+    if (res.error) {
+      toast({ kind: "error", title: "Не вышло", message: res.error });
+      return;
+    }
+    toast({ kind: "success", title: "Разбанен" });
+    void load();
+  };
+
+  const isBanned = (kind: BanKind, value: string | null | undefined) =>
+    Boolean(value) && bans.some((b) => b.kind === kind && b.value === value);
+
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <Panel
+      title="Блокировки и входы"
+      desc="Кто, откуда и с какого устройства заходил. Бан по IP, устройству или аккаунту."
+      badge="bans"
+    >
+      <div className="mb-3 flex gap-1.5">
+        <Chip on={tab === "log"} onClick={() => setTab("log")}>
+          Входы ({events.length})
+        </Chip>
+        <Chip on={tab === "bans"} onClick={() => setTab("bans")}>
+          Баны ({bans.length})
+        </Chip>
+        <span className="flex-1" />
+        <Chip onClick={() => void load()}>Обновить</Chip>
+      </div>
+
+      {loading && <p className="py-3 text-center text-[11px] text-white/30">Загрузка…</p>}
+
+      {!loading && tab === "log" && (
+        <div className="max-h-72 space-y-1 overflow-y-auto">
+          {events.length === 0 && (
+            <p className="py-3 text-center text-[11px] text-white/30">
+              Пока пусто — входы появятся, как только игроки зайдут.
+            </p>
+          )}
+          {events.map((e) => (
+            <div
+              key={e.id}
+              className="flex items-center justify-between gap-2 rounded-xl border border-white/8 bg-black/25 px-2.5 py-2"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-[12px] font-bold">@{e.nickname ?? "—"}</span>
+                  {e.vpn_flag && (
+                    <span className="rounded-md border border-amber-400/30 bg-amber-400/10 px-1 py-px text-[8.5px] font-bold uppercase text-amber-300">
+                      VPN?
+                    </span>
+                  )}
+                  {isBanned("ip", e.ip) && (
+                    <span className="rounded-md border border-mythic/30 bg-mythic/10 px-1 py-px text-[8.5px] font-bold uppercase text-mythic">
+                      бан ip
+                    </span>
+                  )}
+                  {isBanned("device", e.fingerprint) && (
+                    <span className="rounded-md border border-mythic/30 bg-mythic/10 px-1 py-px text-[8.5px] font-bold uppercase text-mythic">
+                      бан устр.
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate text-[10px] tabular-nums text-white/35">
+                  {e.ip ?? "ip ?"} · {e.fingerprint ?? "dev ?"} · {fmt(e.created_at)}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <Chip title="Забанить этот IP" onClick={() => e.ip && void doBan("ip", e.ip, e.nickname)}>
+                  IP
+                </Chip>
+                <Chip
+                  title="Забанить это устройство"
+                  onClick={() => e.fingerprint && void doBan("device", e.fingerprint, e.nickname)}
+                >
+                  устр.
+                </Chip>
+                <Chip
+                  title="Забанить аккаунт"
+                  onClick={() => e.user_id && void doBan("user", e.user_id, e.nickname)}
+                >
+                  акк
+                </Chip>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && tab === "bans" && (
+        <div className="max-h-72 space-y-1 overflow-y-auto">
+          {bans.length === 0 && (
+            <p className="py-3 text-center text-[11px] text-white/30">Активных банов нет.</p>
+          )}
+          {bans.map((b) => (
+            <div
+              key={b.id}
+              className="flex items-center justify-between gap-2 rounded-xl border border-mythic/20 bg-mythic/[0.04] px-2.5 py-2"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="rounded-md border border-mythic/30 bg-mythic/10 px-1 py-px text-[8.5px] font-bold uppercase text-mythic">
+                    {b.kind === "ip" ? "IP" : b.kind === "device" ? "Устройство" : "Аккаунт"}
+                  </span>
+                  {b.nickname && <span className="truncate text-[12px] font-bold">@{b.nickname}</span>}
+                </div>
+                <p className="mt-0.5 truncate text-[10px] tabular-nums text-white/35">
+                  {b.value} · {fmt(b.created_at)}
+                </p>
+              </div>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void doUnban(b.id)}>
+                Разбанить
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3 flex gap-2 border-t border-white/8 pt-3">
+        <select
+          value={manualKind}
+          onChange={(e) => setManualKind(e.target.value as BanKind)}
+          className="rounded-xl border border-white/10 bg-black/40 px-2 py-2 text-[11px] text-white/80 outline-none focus:border-neon/40"
+        >
+          <option value="ip">IP</option>
+          <option value="device">Устройство</option>
+          <option value="user">Аккаунт (uuid)</option>
+        </select>
+        <input
+          value={manualValue}
+          onChange={(e) => setManualValue(e.target.value)}
+          placeholder="Значение для бана"
+          className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+        />
+        <Button
+          size="sm"
+          variant="danger"
+          disabled={busy || !manualValue.trim()}
+          onClick={() => {
+            void doBan(manualKind, manualValue.trim());
+            setManualValue("");
+          }}
+        >
+          Забанить
+        </Button>
+      </div>
+    </Panel>
   );
 }
 
@@ -482,6 +687,9 @@ export default function Admin() {
       </header>
 
       <div className="grid gap-3.5 lg:grid-cols-2">
+        {/* ---------------- bans + login journal ---------------- */}
+        <BanPanel />
+
         {/* ---------------- account picker ---------------- */}
         <Panel
           title="Выбрать аккаунт"

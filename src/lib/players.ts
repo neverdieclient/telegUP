@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase, onlineEnabled } from "../lib/supabase";
 import { authError } from "./authError";
+import { signalBanned } from "./banSignal";
 
 export type PlayerRow = {
   id: string;
@@ -165,6 +166,7 @@ export async function postChat(body: string, nickname: string): Promise<{ error?
     nickname,
     body: body.slice(0, 500),
   });
+  if (error && /banned|violates row-level/i.test(error.message)) signalBanned();
   return error ? { error: error.message } : {};
 }
 
@@ -327,7 +329,10 @@ export async function pushProfileSafe(row: {
     p_last_daily: row.lastDaily ? new Date(row.lastDaily).toISOString() : null,
     p_joined_at: row.joinedAt ? new Date(row.joinedAt).toISOString() : null,
   });
-  if (error) return null;
+  if (error) {
+    if (/banned/i.test(error.message)) signalBanned();
+    return null;
+  }
   return typeof data === "string" ? data : null;
 }
 
@@ -468,6 +473,210 @@ export async function cancelAuction(auctionId: number): Promise<{ error?: string
 export async function closeAuction(auctionId: number): Promise<{ error?: string }> {
   if (!supabase) return { error: "Онлайн не подключён" };
   const { error } = await supabase.from("auctions").update({ sold: true }).eq("id", auctionId);
+  return error ? { error: error.message } : {};
+}
+
+/* ------------------------------------------------- bans / login tracking */
+
+export type BanKind = "ip" | "device" | "user";
+
+export type BanRow = {
+  id: number;
+  kind: BanKind;
+  value: string;
+  label: string | null;
+  reason: string | null;
+  created_at: string;
+  /** последний известный ник/ip/устройство по этому бану (заполняет сервер) */
+  nickname: string | null;
+  ip: string | null;
+  fingerprint: string | null;
+  user_id: string | null;
+};
+
+export type LoginEventRow = {
+  id: number;
+  user_id: string | null;
+  username: string | null;
+  nickname: string | null;
+  ip: string | null;
+  fingerprint: string | null;
+  user_agent: string | null;
+  vpn_flag: boolean;
+  created_at: string;
+};
+
+const IP_CACHE_KEY = "telegup.ip.v1";
+const FP_CACHE_KEY = "telegup.fp.v1";
+
+/**
+ * Public IP of this browser. Free, key-less (api.ipify.org). Cached for the
+ * session — the value cannot change without a reconnect anyway.
+ *
+ * NOTE: this is the *client's* view of its own address. The server never sees
+ * the caller IP through PostgREST, so the client must report it. A determined
+ * cheater can lie here; that is why the ban is ALSO checked server-side by the
+ * stored value and account id.
+ */
+export async function fetchClientIp(): Promise<string | null> {
+  try {
+    const cached = sessionStorage.getItem(IP_CACHE_KEY);
+    if (cached) return cached;
+  } catch {
+    /* private mode: no sessionStorage */
+  }
+  try {
+    const r = await fetch("https://api.ipify.org?format=json", { cache: "no-store" });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { ip?: string };
+    const ip = j.ip ?? null;
+    if (ip) {
+      try {
+        sessionStorage.setItem(IP_CACHE_KEY, ip);
+      } catch {
+        /* ignore */
+      }
+    }
+    return ip;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stable-ish browser fingerprint. Not cryptographic; good enough to catch the
+ * same person returning after an IP change. Persisted in localStorage so it
+ * survives reloads but not a full profile wipe.
+ */
+export function deviceFingerprint(): string {
+  try {
+    const cached = localStorage.getItem(FP_CACHE_KEY);
+    if (cached) return cached;
+  } catch {
+    /* ignore */
+  }
+  const parts = [
+    navigator.userAgent,
+    navigator.language,
+    String(screen.width),
+    String(screen.height),
+    String(screen.colorDepth),
+    String(new Date().getTimezoneOffset()),
+    String(navigator.hardwareConcurrency ?? 0),
+    String((navigator as { deviceMemory?: number }).deviceMemory ?? 0),
+    String(navigator.maxTouchPoints ?? 0),
+  ];
+  // cheap 32-bit hash (FNV-1a) — no crypto needed, just a stable label
+  let h = 0x811c9dc5;
+  const s = parts.join("|");
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  const fp = "fp_" + (h >>> 0).toString(16) + "_" + s.length.toString(16);
+  try {
+    localStorage.setItem(FP_CACHE_KEY, fp);
+  } catch {
+    /* ignore */
+  }
+  return fp;
+}
+
+/**
+ * Coarse "looks like a VPN / datacenter / proxy" heuristic with no external
+ * API: private-range, known CDN/datacenter prefixes and a few hosting ASN
+ * ranges are flagged. Deliberately conservative — it is a hint for the owner,
+ * never a hard block.
+ */
+export function vpnHint(ip: string | null): boolean {
+  if (!ip) return false;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (!v4) return false; // only IPv4 heuristics for now
+  const a = Number(v4[1]);
+  const b = Number(v4[2]);
+  // common hosting / cloud / VPN egress ranges (partial list, may drift)
+  const datacenter: Array<[number, number]> = [
+    [5, 5],      // 5.0.0.0/8
+    [34, 34],    // GCP
+    [35, 35],    // GCP
+    [45, 45],    // various VPS
+    [51, 51],    // OVH
+    [62, 62],    // Hetzner
+    [104, 104],  // Cloudflare / VPS
+    [138, 138],
+    [146, 146],  // Hetzner
+    [159, 159],  // DigitalOcean
+    [165, 165],  // incl. DO
+    [167, 167],  // DigitalOcean
+    [178, 178],  // incl. DO
+    [185, 185],
+    [188, 188],
+    [194, 194],  // incl. OVH
+    [212, 212],
+  ];
+  return datacenter.some(([lo, hi]) => a >= lo && a <= hi) || (a === 10) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+/**
+ * Report this login to the server (ip + device + ua) and learn whether the
+ * account/ip/device is banned. Returns { banned } so the UI can raise the
+ * block screen immediately. No-op when offline or signed out.
+ */
+export async function logLogin(): Promise<{ banned: boolean; offline: boolean }> {
+  if (!supabase) return { banned: false, offline: true };
+  const { data: auth } = await supabase.auth.getSession();
+  if (!auth.session) return { banned: false, offline: false };
+
+  const [ip, fingerprint] = await Promise.all([fetchClientIp(), Promise.resolve(deviceFingerprint())]);
+  const { data, error } = await supabase.rpc("log_login", {
+    p_ip: ip,
+    p_fingerprint: fingerprint,
+    p_user_agent: navigator.userAgent,
+    p_vpn_flag: vpnHint(ip),
+  });
+  if (error) return { banned: false, offline: false };
+  const banned = Boolean((data as { banned?: boolean } | null)?.banned);
+  if (banned) signalBanned();
+  return { banned, offline: false };
+}
+
+/** Owner: list active bans (with the offender's last-known identity). */
+export async function fetchBans(): Promise<BanRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("owner_list_bans");
+  if (error || !data) return [];
+  return data as BanRow[];
+}
+
+/** Owner: recent login journal (ip, device, time, nickname). */
+export async function fetchLoginEvents(limit = 200): Promise<LoginEventRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("owner_login_events", { p_limit: limit });
+  if (error || !data) return [];
+  return data as LoginEventRow[];
+}
+
+/** Owner: ban by ip / device / account id. */
+export async function ownerBan(
+  kind: BanKind,
+  value: string,
+  label?: string | null,
+  reason?: string | null,
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_ban", {
+    p_kind: kind,
+    p_value: value,
+    p_label: label ?? null,
+    p_reason: reason ?? null,
+  });
+  return error ? { error: error.message } : {};
+}
+
+/** Owner: lift a ban by its row id. */
+export async function ownerUnban(id: number): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_unban", { p_id: id });
   return error ? { error: error.message } : {};
 }
 

@@ -10,6 +10,7 @@ import {
   type PurchasedShopItem,
 } from "../data/gifts";
 import { pick, randInt, uid } from "../lib/rng";
+import { onBanSignal } from "../lib/banSignal";
 import { DEFAULT_THEME, type ThemeId } from "../lib/theme";
 import { rollUsername, USERNAME_BOX_PRICE } from "../lib/usernameBox";
 
@@ -203,6 +204,12 @@ type State = {
   onlineUserId: string | null;
   setOnlineUserId: (id: string | null) => void;
   /**
+   * Set when the server reports this account / IP / device is banned.
+   * Drives the full-screen block notice; the server also enforces it.
+   */
+  banned: boolean;
+  setBanned: (b: boolean) => void;
+  /**
    * Adopt the server's copy of the profile after the owner changed it
    * (marks, badges, tier, stars, nickname, cosmetics). Only fields the owner
    * controls are taken; local progress is never rolled back.
@@ -305,6 +312,7 @@ export const initialState = {
   stars: 500,
   coins: 0,
   onlineUserId: null as string | null,
+  banned: false,
   ownerSyncSeen: null as string | null,
   cloudLoadedFor: null as string | null,
   inventory: [] as InventoryItem[],
@@ -807,6 +815,7 @@ export const useGame = create<State>()(
         }),
 
       setOnlineUserId: (id) => set({ onlineUserId: id }),
+      setBanned: (b) => set({ banned: b }),
       setOwnerSyncSeen: (stamp) => set({ ownerSyncSeen: stamp }),
 
       cloudLoadedFor: null as string | null,
@@ -1050,6 +1059,10 @@ export const useGame = create<State>()(
 /** Small helpers used across pages. */
 export const selectInventoryValue = (state: State) =>
   state.inventory.reduce((acc, i) => acc + (GIFT_BY_ID[i.giftId]?.stars ?? 0), 0);
+
+// The data layer raises this when a server RPC rejects with 'banned'. Flip the
+// flag so App swaps in the block notice — even if the login check was missed.
+onBanSignal(() => useGame.getState().setBanned(true));
 
 export const FREE_CASE_ID = FREE_CASE_CASE_ID;
 
