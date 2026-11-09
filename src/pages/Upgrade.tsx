@@ -12,18 +12,22 @@ const SIZE = 320;
 const CX = SIZE / 2;
 const CY = SIZE / 2;
 const R = 134;
-/** Needle length: stops short of the inner ring (R - 11), so it can't reach the hub. */
-const NEEDLE_LEN = R - 16;
+/**
+ * Compact needle: a short head that sits just inside the ring band.
+ * Successive versions kept shrinking it — it now stops well short of the
+ * hub so it reads as a small pointer rather than a long spoke.
+ */
+const NEEDLE_LEN = R - 46;
 
 /** Payout odds: value of the target divided by value given away. */
-const HOUSE_EDGE = 0.92;
+const HOUSE_EDGE = 0.88;
 
 function calcChance(from: Gift, to: Gift) {
   const raw = (from.stars / to.stars) * 100;
   return Math.min(95, Math.max(0.4, raw * HOUSE_EDGE));
 }
 
-/** Preset multipliers: target value = source value × mult, chance = 92 / mult. */
+/** Preset multipliers: target value = source value × mult, chance = 88 / mult. */
 const PRESETS = [1.5, 2, 3, 5, 8, 10, 25, 50, 100] as const;
 
 function presetChance(mult: number) {
@@ -313,23 +317,23 @@ export default function UpgradePage() {
               <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2">
                 {/* compact tapered needle: sits inside the ring band, never pierces the hub */}
                 <svg
-                  width="22"
+                  width="16"
                   height={NEEDLE_LEN + 2}
-                  viewBox={`0 0 22 ${NEEDLE_LEN + 2}`}
+                  viewBox={`0 0 16 ${NEEDLE_LEN + 2}`}
                   className="absolute left-1/2 top-0 -translate-x-1/2 overflow-visible"
-                  style={{ filter: "drop-shadow(0 0 6px rgba(255,255,255,0.45))" }}
+                  style={{ filter: "drop-shadow(0 0 5px rgba(255,255,255,0.5))" }}
                 >
                   <defs>
                     <linearGradient id="needleShaft" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0" stopColor="#ffffff" stopOpacity="1" />
-                      <stop offset="1" stopColor="#ffffff" stopOpacity="0.55" />
+                      <stop offset="1" stopColor="#ffffff" stopOpacity="0.5" />
                     </linearGradient>
                   </defs>
-                  {/* arrowhead */}
-                  <path d={`M11 0 L19 14 L11 10.5 L3 14 Z`} fill="#ffffff" />
-                  {/* shaft */}
+                  {/* slim arrowhead */}
+                  <path d={`M8 0 L12.4 9 L8 6.8 L3.6 9 Z`} fill="#ffffff" />
+                  {/* hairline shaft */}
                   <path
-                    d={`M8.8 12.5 L13.2 12.5 L12.1 ${NEEDLE_LEN} L9.9 ${NEEDLE_LEN} Z`}
+                    d={`M6.9 8.4 L9.1 8.4 L8.4 ${NEEDLE_LEN} L7.6 ${NEEDLE_LEN} Z`}
                     fill="url(#needleShaft)"
                   />
                 </svg>

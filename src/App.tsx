@@ -1,12 +1,15 @@
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { lazy, Suspense, useEffect } from "react";
 import { Layout } from "./components/Layout";
+import { DeviceChooser, useDeviceScope } from "./components/DeviceChooser";
 import { RequireAuth } from "./components/RequireAuth";
+import { RequireOpen } from "./components/RequireOpen";
 import Landing from "./pages/Landing";
 import { useGame } from "./store/useGame";
 import { applyTheme } from "./lib/theme";
 import { useStatsSync } from "./lib/useStatsSync";
 import { useAccountMirror } from "./lib/useAccountMirror";
+import { useGiftInbox } from "./lib/useGiftInbox";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Cases = lazy(() => import("./pages/Cases"));
@@ -20,6 +23,8 @@ const Admin = lazy(() => import("./pages/Admin"));
 const Auth = lazy(() => import("./pages/Auth"));
 const Leaders = lazy(() => import("./pages/Leaders"));
 const Auction = lazy(() => import("./pages/Auction"));
+const Chat = lazy(() => import("./pages/Chat"));
+const Craft = lazy(() => import("./pages/Craft"));
 
 function PageLoader() {
   return (
@@ -35,14 +40,25 @@ function PageLoader() {
 export default function App() {
   useStatsSync();
   useAccountMirror();
+  useGiftInbox();
+  useDeviceScope();
 
   const theme = useGame((s) => s.theme);
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
 
+  // "Анимации" switch: one class on <html> freezes every decorative motion
+  const reduceMotion = useGame((s) => s.settings.reduceMotion);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("reduce-motion", reduceMotion);
+    return () => root.classList.remove("reduce-motion");
+  }, [reduceMotion]);
+
   return (
     <HashRouter>
+      <DeviceChooser />
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/" element={<Landing />} />
@@ -50,15 +66,17 @@ export default function App() {
           <Route path="/admin" element={<RequireAuth><Admin /></RequireAuth>} />
           <Route path="/app" element={<RequireAuth><Layout /></RequireAuth>}>
             <Route index element={<Dashboard />} />
-            <Route path="cases" element={<Cases />} />
-            <Route path="upgrade" element={<UpgradePage />} />
-            <Route path="market" element={<Market />} />
-            <Route path="auction" element={<Auction />} />
-            <Route path="leaders" element={<Leaders />} />
+            <Route path="cases" element={<RequireOpen><Cases /></RequireOpen>} />
+            <Route path="upgrade" element={<RequireOpen><UpgradePage /></RequireOpen>} />
+            <Route path="market" element={<RequireOpen><Market /></RequireOpen>} />
+            <Route path="auction" element={<RequireOpen><Auction /></RequireOpen>} />
+            <Route path="leaders" element={<RequireOpen><Leaders /></RequireOpen>} />
             <Route path="inventory" element={<Inventory />} />
-            <Route path="minigames" element={<MiniGames />} />
+            <Route path="craft" element={<RequireOpen><Craft /></RequireOpen>} />
+            <Route path="minigames" element={<RequireOpen><MiniGames /></RequireOpen>} />
             <Route path="shop" element={<Shop />} />
             <Route path="profile" element={<Profile />} />
+            <Route path="chat" element={<Chat />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

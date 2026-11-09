@@ -1,17 +1,59 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { GIFT_BY_ID } from "../data/gifts";
 import { useGame } from "../store/useGame";
 import { onlineEnabled, supabase } from "./supabase";
-import { pushStats } from "./players";
+import { pushProfileSafe, pullCloudSave } from "./players";
 
 /**
  * Mirrors the local game state into the shared Supabase table so that other
- * players see the real leaderboard. Debounced: stats are pushed at most once
- * per 10 seconds, and only when the value actually changed.
+ * players see the real leaderboard AND so a player can continue on another
+ * device.
+ *
+ * Order matters:
+ *   1. the very first time this browser sees an account, download the cloud
+ *      save (balance, inventory, timers) — a fresh device starts at 500★ and
+ *      an empty inventory, so pushing before pulling wiped the real save;
+ *   2. afterwards push the local snapshot, but never before step 1 finished.
+ *
+ * Uses `player_push_profile`, which only writes progression fields — marks,
+ * badges and the tier stay owner-only.
  */
 export function useStatsSync() {
+  const onlineUserId = useGame((s) => s.onlineUserId);
+
+  // one pull per account per page load
+  const pulledFor = useRef<string | null>(null);
+  const pushing = useRef(false);
+
+  // ---- 1. pull the cloud save once per account ----
   useEffect(() => {
-    if (!onlineEnabled || !supabase) return;
+    if (!onlineEnabled || !supabase || !onlineUserId) return;
+    if (useGame.getState().cloudLoadedFor === onlineUserId) {
+      pulledFor.current = onlineUserId;
+      return;
+    }
+    if (pulledFor.current === onlineUserId) return;
+    pulledFor.current = onlineUserId;
+
+    let dead = false;
+    void (async () => {
+      const save = await pullCloudSave();
+      if (dead) return;
+      if (save && (save.stars > 0 || (save.inventory?.length ?? 0) > 0)) {
+        useGame.getState().adoptCloudSave(save);
+      }
+      useGame.getState().setCloudLoadedFor(onlineUserId);
+      useGame.getState().setOwnerSyncSeen(save?.owner_synced_at ?? null);
+    })();
+
+    return () => {
+      dead = true;
+    };
+  }, [onlineUserId]);
+
+  // ---- 2. push local changes once the save is in memory ----
+  useEffect(() => {
+    if (!onlineEnabled || !supabase || !onlineUserId) return;
 
     let lastPush = 0;
     let timer: number | undefined;
@@ -21,25 +63,31 @@ export function useStatsSync() {
       const s = useGame.getState();
       const user = s.onlineUserId;
       if (!user) return;
+      // never push before this browser has the real save
+      if (s.cloudLoadedFor !== user) return;
+      if (pushing.current) return;
 
       const inventoryValue = s.inventory.reduce(
         (a, i) => a + (GIFT_BY_ID[i.giftId]?.stars ?? 0),
         0,
       );
-      const key = `${s.stars}|${inventoryValue}|${s.inventory.length}`;
+      const key = `${s.stars}|${inventoryValue}|${s.inventory.length}|${s.profile.nickname}`;
       if (key === lastKey) return;
       lastKey = key;
 
-      pushStats({
-        id: user,
+      pushing.current = true;
+      void pushProfileSafe({
         username: s.profile.nickname.toUpperCase(),
         nickname: s.profile.nickname,
-        tier: s.profile.tier,
         stars: s.stars,
         inventory_value: inventoryValue,
         items: s.inventory.length,
-        badges: s.profile.badges,
-        marks: s.profile.marks,
+        inventory: s.inventory,
+        lastFreeCase: s.lastFreeCaseAt,
+        lastDaily: s.lastDailyAt,
+        joinedAt: s.joinedAt,
+      }).finally(() => {
+        pushing.current = false;
       });
     };
 
@@ -61,5 +109,5 @@ export function useStatsSync() {
       window.clearTimeout(timer);
       unsubscribe();
     };
-  }, []);
+  }, [onlineUserId]);
 }

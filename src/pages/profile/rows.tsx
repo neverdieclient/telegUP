@@ -38,7 +38,7 @@ export function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 
 export const MARKS: { id: CheckMarkKind; label: string; desc: string }[] = [
   { id: "owner", label: "Овнер", desc: "Владелец проекта" },
-  { id: "premium", label: "Premium", desc: "Подписка Telegram Premium" },
+  { id: "premium", label: "Premium", desc: "Премиум-аккаунт" },
   { id: "basic", label: "Проверенный", desc: "Верифицированный аккаунт" },
-  { id: "crown", label: "Коллекционный", desc: "Редкий коллекционный ник" },
+  { id: "crown", label: "Коллекционный", desc: "Редкий коллекционный статус" },
 ];

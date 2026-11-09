@@ -7,7 +7,7 @@ import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
 import { fetchTop, searchPlayers, useAuth, type PlayerRow } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 
-const MARKS: CheckMarkKind[] = ["owner", "premium", "basic", "crown"];
+const MARKS: CheckMarkKind[] = ["basic"];
 
 function PlayerAvatar({ p, size = 48 }: { p: PlayerRow; size?: number }) {
   return (
@@ -26,7 +26,6 @@ function PlayerMarks({ p, size = 14 }: { p: PlayerRow; size?: number }) {
       {MARKS.filter((m) => p.marks?.includes(m)).map((m) => (
         <CheckMark key={m} kind={m} size={size} />
       ))}
-      {p.tier === "Premium" && !p.marks?.includes("premium") && <CheckMark kind="premium" size={size} />}
     </span>
   );
 }

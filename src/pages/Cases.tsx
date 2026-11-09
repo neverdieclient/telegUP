@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildCaseStrip, rollCase, rollLuck, rollStarDrop, type RolledItem } from "../lib/rng";
+import { MAX_CASE_PAYOUT, buildCaseStrip, rollCase, rollLuck, rollStarDrop, type RolledItem } from "../lib/rng";
 import { CASES, FREE_CASE_CASE_ID, RARITY_META, casePool, type Case, type Gift } from "../data/gifts";
 import { useGame } from "../store/useGame";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
@@ -176,8 +176,8 @@ export default function Cases() {
         return;
       }
 
-      const winner = rollCase(c, luckBoost ? 0.45 : 0);
-      // independent star drop: ~10% of rolls also pay ★ (up to 1,000)
+      const winner = rollCase(c, luckBoost ? 0.45 : 0, free ? MAX_CASE_PAYOUT : Infinity);
+      // frequent, small star drops; the free case keeps the same 10,000 ★ ceiling
       const starWin = luckBoost ? rollLuck(0.45) : rollStarDrop();
       const newStrip = buildCaseStrip(c, winner, WINNER_INDEX, STRIP_LEN);
 

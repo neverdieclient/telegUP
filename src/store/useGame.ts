@@ -5,10 +5,11 @@ import {
   FREE_CASE_CASE_ID,
   GIFT_BY_ID,
   GIFTS,
+  RARITY_ORDER,
   type BadgeId,
   type PurchasedShopItem,
 } from "../data/gifts";
-import { randInt, uid } from "../lib/rng";
+import { pick, randInt, uid } from "../lib/rng";
 import { DEFAULT_THEME, type ThemeId } from "../lib/theme";
 import { rollUsername, USERNAME_BOX_PRICE } from "../lib/usernameBox";
 
@@ -18,8 +19,13 @@ export type InventoryItem = {
   giftId: string;
   acquiredAt: number;
   /** where it came from, for the item badge */
-  source: "case" | "market" | "upgrade" | "free" | "admin" | "pvp" | "mines" | "crash" | "dice" | "wheel" | "coinflip" | "tower";
+  source: "case" | "market" | "upgrade" | "free" | "admin" | "pvp" | "mines" | "crash" | "dice" | "wheel" | "coinflip" | "tower" | "craft";
 };
+
+/** Outcome of one crafting attempt. */
+export type CraftResult =
+  | { ok: true; item: InventoryItem }
+  | { ok: false; reason: "too-few" | "mismatch" | "burned" | "missing" };
 
 export type StatKey =
   | "casesOpened"
@@ -27,7 +33,6 @@ export type StatKey =
   | "upgradesLost"
   | "marketBuys"
   | "giftsSold"
-  | "clicks"
   | "crashWins"
   | "minesWins"
   | "pvpWins"
@@ -41,6 +46,9 @@ export type Settings = {
   sound: boolean;
   reduceMotion: boolean;
 };
+
+/** How the layout behaves: follows the screen, or is forced by the choice made on first visit. */
+export type DeviceMode = "auto" | "desktop" | "mobile";
 
 export type Toast = {
   id: string;
@@ -61,6 +69,14 @@ export type Profile = {
   anonymousNumber: boolean;
   /** generated +888 mask, e.g. "+888 123 456" */
   phoneNumber: string | null;
+  /** extra decorative names shown after «а также» */
+  altNames: string[];
+  /** accent colour of the profile avatar ring */
+  accent: string | null;
+  /** gradient preset id for the avatar/header (see ACCENTS) */
+  gradient: string | null;
+  /** short status line under the nickname */
+  bio: string | null;
   purchasedUsernames: string[];
   /** second, collectible username shown under the main one */
   collectibleUsername: string | null;
@@ -85,6 +101,8 @@ type State = {
   // ---- cooldowns ----
   lastFreeCaseAt: number | null;
   lastDailyAt: number | null;
+  /** last «Удача дня» spin (ms); gates the free earner */
+  lastFortuneAt: number | null;
 
   // ---- admin ----
   admin: {
@@ -95,6 +113,8 @@ type State = {
     payoutMultiplier: number;
     freeCases: boolean;
     noCooldown: boolean;
+    /** when on, only profile, inventory, Telegram, settings and chat work */
+    maintenance: boolean;
   };
 
   // ---- settings ----
@@ -104,6 +124,12 @@ type State = {
   // ---- appearance ----
   theme: ThemeId;
   setTheme: (id: ThemeId) => void;
+  /** forced layout from the first-visit screen ("auto" follows the window) */
+  deviceMode: DeviceMode;
+  setDeviceMode: (m: DeviceMode) => void;
+  /** true once the visitor picked a version on the first-visit screen */
+  deviceChosen: boolean;
+  chooseDevice: (m: DeviceMode) => void;
 
   // ---- purchased shop items (telegram clone) ----
   shopItems: PurchasedShopItem[];
@@ -132,9 +158,21 @@ type State = {
   /** Failed model upgrade: the source item is consumed. */
   loseItemOnUpgrade: (instanceId: string) => void;
 
+  /**
+   * Crafting: consume 2–4 items and get either one better gift (a "crafted"
+   * copy) or nothing. The craft roll is weighted by how many items went in.
+   */
+  craftItems: (instanceIds: string[]) => CraftResult;
+
   // ---- actions: free case ----
   freeCaseReadyAt: () => number;
   claimFreeCaseCooldown: () => void;
+
+  // ---- actions: «Удача дня» (free earner) ----
+  /** ms left before the next free spin, 0 when ready */
+  fortuneReadyIn: () => number;
+  /** Spend the free spin and return the star prize (0 if not ready). */
+  spinFortune: () => number;
 
   // ---- actions: shop ----
   buyUsername: (username: string, price: number) => boolean;
@@ -152,9 +190,68 @@ type State = {
   setMainUsername: (username: string) => boolean;
   setCollectibleUsername: (username: string | null) => void;
   setAnonymousNumber: (value: boolean) => void;
+  /** Set an arbitrary +888 number (typed or generated) and switch the number on. */
+  adminSetPhoneNumber: (value: string | null) => void;
+  /** Extra «а также @name» entries on the profile card. */
+  setAltNames: (names: string[]) => void;
+  /** Avatar/header cosmetics. */
+  setAccent: (accent: string | null, gradient: string | null) => void;
+  setBio: (bio: string | null) => void;
+  /** Wipe an account's cosmetics back to defaults. */
+  adminClearCosmetics: () => void;
   /** Supabase user id of the signed-in player, mirrored into the store. */
   onlineUserId: string | null;
   setOnlineUserId: (id: string | null) => void;
+  /**
+   * Adopt the server's copy of the profile after the owner changed it
+   * (marks, badges, tier, stars, nickname, cosmetics). Only fields the owner
+   * controls are taken; local progress is never rolled back.
+   */
+  adoptServerProfile: (server: {
+    marks: string[];
+    badges: BadgeId[];
+    tier: "Free" | "Premium";
+    stars: number;
+    nickname: string;
+    phoneNumber: string | null;
+    altNames: string[];
+    bio: string | null;
+    accent: string | null;
+    gradient: string | null;
+  }) => void;
+  /**
+   * Last `owner_synced_at` this browser already applied. Adoption is skipped
+   * when the row's stamp is unchanged, so a stale server row can never bring
+   * back a tick the owner just removed here.
+   */
+  ownerSyncSeen: string | null;
+  setOwnerSyncSeen: (stamp: string | null) => void;
+
+  /**
+   * Account id whose cloud save was already pulled into this browser. A fresh
+   * device has no local progress, so it must download the cloud row *before*
+   * anything is pushed up — otherwise the default 500★ overwrote the save.
+   */
+  cloudLoadedFor: string | null;
+  setCloudLoadedFor: (id: string | null) => void;
+
+  /** Replace local progression with a downloaded cloud save. */
+  adoptCloudSave: (save: {
+    stars: number;
+    inventory: unknown[];
+    last_free_case: string | null;
+    last_daily: string | null;
+    joined_at: string | null;
+    nickname: string;
+    tier: "Free" | "Premium";
+    marks: string[];
+    badges: string[];
+    phone_number: string | null;
+    alt_names: string[];
+    bio: string | null;
+    accent: string | null;
+    gradient: string | null;
+  }) => void;
   /** verification marks: basic / premium / owner / crown */
   toggleMark: (mark: string) => void;
 
@@ -183,7 +280,6 @@ const emptyStats: Record<StatKey, number> = {
   upgradesLost: 0,
   marketBuys: 0,
   giftsSold: 0,
-  clicks: 0,
   crashWins: 0,
   minesWins: 0,
   pvpWins: 0,
@@ -194,26 +290,44 @@ const emptyStats: Record<StatKey, number> = {
   towerWins: 0,
 };
 
+/* ------------------------------------------------------------- earners */
+/**
+ * «Удача дня» is the free, always-available earner that replaced the old
+ * tap-clicker. One spin every `FORTUNE_COOLDOWN_MS`, no stake, pays a modest
+ * random prize so a patient player keeps a small income without touching the
+ * staked mini-games.
+ */
+export const FORTUNE_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
+/** prize buckets, most likely first */
+export const FORTUNE_PRIZES = [25, 50, 75, 100, 150, 200, 300, 500, 1_000] as const;
+
 export const initialState = {
   stars: 500,
   coins: 0,
   onlineUserId: null as string | null,
+  ownerSyncSeen: null as string | null,
+  cloudLoadedFor: null as string | null,
   inventory: [] as InventoryItem[],
   profile: {
     nickname: "telegup_user",
-      customNickname: false,
+    customNickname: false,
     tier: "Free" as const,
     badge: null,
     badges: [] as BadgeId[],
     marks: [] as string[],
     anonymousNumber: false,
     phoneNumber: null,
+    altNames: [] as string[],
+    accent: null as string | null,
+    gradient: null as string | null,
+    bio: null as string | null,
     purchasedUsernames: [] as string[],
     collectibleUsername: null,
   },
   joinedAt: Date.now(),
   lastFreeCaseAt: null as number | null,
   lastDailyAt: null as number | null,
+  lastFortuneAt: null as number | null,
   admin: {
     alwaysWinUpgrade: false,
     luckBoost: false,
@@ -221,9 +335,12 @@ export const initialState = {
     payoutMultiplier: 100,
     freeCases: false,
     noCooldown: false,
+    maintenance: false,
   },
   settings: { sound: true, reduceMotion: false } as Settings,
   theme: DEFAULT_THEME as ThemeId,
+  deviceMode: "auto" as DeviceMode,
+  deviceChosen: false,
   stats: { ...emptyStats },
   shopItems: [] as PurchasedShopItem[],
   toasts: [] as Toast[],
@@ -240,11 +357,67 @@ const PHONE_MASKS = [
   (d: string) => `+888 ${d.slice(0, 1)} ${d.slice(1, 4)} ${d.slice(4, 6)}`,
 ];
 
+/** Named presets shown in the admin panel, e.g. «+888 X XXX» → "+888 8 888". */
+export const PHONE_FORMATS: { id: string; label: string; pattern: string }[] = [
+  { id: "x-xxx", label: "+888 X XXX", pattern: "+888 X XXX" },
+  { id: "xx-xxx", label: "+888 XX XXX", pattern: "+888 XX XXX" },
+  { id: "xxx-xxx", label: "+888 XXX XXX", pattern: "+888 XXX XXX" },
+  { id: "x-xx-xxx", label: "+888 X XX XXX", pattern: "+888 X XX XXX" },
+  { id: "xx-xx-xx", label: "+888 XX XX XX", pattern: "+888 XX XX XX" },
+  { id: "x-xxx-xx", label: "+888 X XXX XX", pattern: "+888 X XXX XX" },
+  { id: "plain", label: "+888", pattern: "+888" },
+];
+
+/** Where the free-form digits go inside a preset (6 digits total). */
+function applyFormat(formatId: string, digits: string): string {
+  const d = digits.replace(/\D/g, "").padEnd(6, "0").slice(0, 6);
+  const groups: Record<string, number[]> = {
+    "x-xxx": [1, 3],
+    "xx-xxx": [2, 3],
+    "xxx-xxx": [3, 3],
+    "x-xx-xxx": [1, 2, 3],
+    "xx-xx-xx": [2, 2, 2],
+    "x-xxx-xx": [1, 3, 2],
+    plain: [],
+  };
+  const sizes = groups[formatId] ?? [1, 3];
+  const parts: string[] = [];
+  let at = 0;
+  for (const n of sizes) {
+    parts.push(d.slice(at, at + n));
+    at += n;
+  }
+  return ["+888", ...parts].join(" ");
+}
+
+/**
+ * Format any user input into a +888 number.
+ *
+ * - `"+888 8 888"` / `"8888 888"` / `"8-888-123"` → keeps the digits and
+ *   re-groups them with the preset's spacing.
+ * - Anything without digits → a random number in that preset.
+ * Always returns a string that starts with "+888", or "" for empty input.
+ */
+export function formatPhoneNumber(input: string, formatId = "x-xxx"): string {
+  const trimmed = (input ?? "").trim();
+  const digits = trimmed.replace(/\D/g, "");
+  // "+888" alone is a valid (empty) anonymous number
+  if (!trimmed) return "";
+  if (!digits || digits === "888") return applyFormat(formatId, randomDigits());
+  // the leading 888 is the prefix, not part of the six free digits
+  const body = digits.startsWith("888") && digits.length > 3 ? digits.slice(3) : digits;
+  return applyFormat(formatId, body);
+}
+
 /** Random, Telegram-looking "+888 x xxx" style anonymous number. */
 export function generateAnonymousNumber(): string {
+  return PHONE_MASKS[randInt(PHONE_MASKS.length)](randomDigits());
+}
+
+function randomDigits(): string {
   let digits = "";
   for (let i = 0; i < 6; i++) digits += String(randInt(10));
-  return PHONE_MASKS[randInt(PHONE_MASKS.length)](digits);
+  return digits;
 }
 
 /* ----------------------------------------------------------------- store */
@@ -266,6 +439,34 @@ export const useGame = create<State>()(
         if (get().coins < n) return false;
         set((s) => ({ coins: s.coins - n }));
         return true;
+      },
+
+      fortuneReadyIn: () => {
+        const { lastFortuneAt, admin } = get();
+        if (admin.freeCases || admin.noCooldown) return 0;
+        if (!lastFortuneAt) return 0;
+        return Math.max(0, lastFortuneAt + FORTUNE_COOLDOWN_MS - Date.now());
+      },
+
+      spinFortune: () => {
+        const s = get();
+        if (s.fortuneReadyIn() > 0) return 0;
+        // weight the low end of the table so a spin feels honest but modest
+        const weights = FORTUNE_PRIZES.map((_, i) => Math.pow(0.62, i));
+        const total = weights.reduce((a, w) => a + w, 0);
+        let r = Math.random() * total;
+        let idx = 0;
+        for (let i = 0; i < weights.length; i++) {
+          r -= weights[i];
+          if (r <= 0) {
+            idx = i;
+            break;
+          }
+        }
+        const base = FORTUNE_PRIZES[idx];
+        const prize = Math.max(1, Math.round(base * (s.admin.payoutMultiplier / 100)));
+        set({ lastFortuneAt: Date.now(), stars: s.stars + prize });
+        return prize;
       },
 
       addItem: (giftId, source) => {
@@ -356,6 +557,72 @@ export const useGame = create<State>()(
           inventory: s.inventory.filter((i) => i.id !== instanceId),
           stats: { ...s.stats, upgradesLost: s.stats.upgradesLost + 1 },
         })),
+
+      craftItems: (instanceIds) => {
+        const s = get();
+        const items = instanceIds
+          .map((id) => s.inventory.find((i) => i.id === id))
+          .filter((i): i is InventoryItem => Boolean(i));
+        if (items.length < 2) return { ok: false, reason: "too-few" };
+        if (items.length > 4) return { ok: false, reason: "mismatch" };
+
+        const source = GIFT_BY_ID[items[0].giftId];
+        if (!source) return { ok: false, reason: "missing" };
+        // every item must be the same collectible (the same slug)
+        if (!items.every((i) => GIFT_BY_ID[i.giftId]?.slug === source.slug)) {
+          return { ok: false, reason: "mismatch" };
+        }
+
+        // consume the inputs no matter what the roll does
+        const idSet = new Set(items.map((i) => i.id));
+
+        // more items → better odds: 2→35%, 3→50%, 4→65%
+        const winOdds = 0.2 + items.length * 0.075;
+        const success = Math.random() < winOdds;
+
+        if (!success) {
+          set((cur) => ({
+            inventory: cur.inventory.filter((i) => !idSet.has(i.id)),
+            stats: { ...cur.stats, giftsSold: cur.stats.giftsSold + items.length },
+          }));
+          return { ok: false, reason: "burned" };
+        }
+
+        // pick a better model of the same collectible — the next value step up
+        const sameModel = GIFTS.filter(
+          (g) => g.slug === source.slug && g.kind === "model" && g.stars > source.stars,
+        );
+        let target = sameModel.length
+          ? pick(sameModel.sort((a, b) => a.stars - b.stars).slice(0, 2))
+          : null;
+
+        // nothing better in the same collectible → roll a random gift of a
+        // higher rarity (a true "crafted" reward)
+        if (!target) {
+          const idx = RARITY_ORDER.indexOf(source.rarity);
+          const higherRarities = RARITY_ORDER.slice(Math.max(0, idx + 1));
+          const pool = GIFTS.filter(
+            (g) => g.kind === "gift" && higherRarities.includes(g.rarity),
+          );
+          target = pool.length ? pick(pool) : pick(GIFTS.filter((g) => g.stars > source.stars));
+        }
+        if (!target) {
+          set((cur) => ({ inventory: cur.inventory.filter((i) => !idSet.has(i.id)) }));
+          return { ok: false, reason: "burned" };
+        }
+
+        const crafted: InventoryItem = {
+          id: uid("inv"),
+          giftId: target.id,
+          acquiredAt: Date.now(),
+          source: "craft",
+        };
+        set((cur) => ({
+          inventory: [crafted, ...cur.inventory.filter((i) => !idSet.has(i.id))],
+          stats: { ...cur.stats, upgradesWon: cur.stats.upgradesWon + 1 },
+        }));
+        return { ok: true, item: crafted };
+      },
 
       freeCaseReadyAt: () => {
         const { lastFreeCaseAt, admin } = get();
@@ -484,6 +751,45 @@ export const useGame = create<State>()(
           },
         })),
 
+      adminSetPhoneNumber: (value) =>
+        set((s) => {
+          const clean = value === null ? null : formatPhoneNumber(value);
+          return {
+            profile: {
+              ...s.profile,
+              phoneNumber: clean,
+              anonymousNumber: Boolean(clean),
+            },
+          };
+        }),
+
+      setAltNames: (names) =>
+        set((s) => ({
+          profile: {
+            ...s.profile,
+            altNames: names
+              .map((n) => n.replace(/^@/, "").replace(/[^a-zA-Z0-9_]/g, ""))
+              .filter(Boolean)
+              .slice(0, 4),
+          },
+        })),
+
+      setAccent: (accent, gradient) =>
+        set((s) => ({ profile: { ...s.profile, accent, gradient } })),
+
+      setBio: (bio) => set((s) => ({ profile: { ...s.profile, bio: bio?.slice(0, 60) ?? null } })),
+
+      adminClearCosmetics: () =>
+        set((s) => ({
+          profile: {
+            ...s.profile,
+            accent: null,
+            gradient: null,
+            bio: null,
+            altNames: [],
+          },
+        })),
+
       toggleMark: (mark) =>
         set((s) => {
           const on = s.profile.marks.includes(mark);
@@ -501,6 +807,108 @@ export const useGame = create<State>()(
         }),
 
       setOnlineUserId: (id) => set({ onlineUserId: id }),
+      setOwnerSyncSeen: (stamp) => set({ ownerSyncSeen: stamp }),
+
+      cloudLoadedFor: null as string | null,
+      setCloudLoadedFor: (id) => set({ cloudLoadedFor: id }),
+
+      adoptCloudSave: (save) =>
+        set((s) => {
+          const inv = (save.inventory ?? []).filter(
+            (i): i is InventoryItem =>
+              Boolean(i) &&
+              typeof (i as InventoryItem).giftId === "string" &&
+              Boolean(GIFT_BY_ID[(i as InventoryItem).giftId]),
+          );
+          const marks = [...(save.marks ?? [])];
+          if (save.tier === "Premium" && !marks.includes("premium")) marks.push("premium");
+          // Never let a stale server pull wipe stars the player just earned
+          // locally (a fortune spin / case / minigame win has not been pushed
+          // yet). Local is the player's own balance; the pull may only raise
+          // it (owner grant) — never lower it below what is already on screen.
+          const cloudStars = Math.max(0, Math.round(save.stars ?? s.stars));
+          return {
+            stars: Math.max(s.stars, cloudStars),
+            inventory: inv,
+            joinedAt: save.joined_at ? new Date(save.joined_at).getTime() : s.joinedAt,
+            lastFreeCaseAt: save.last_free_case ? new Date(save.last_free_case).getTime() : s.lastFreeCaseAt,
+            lastDailyAt: save.last_daily ? new Date(save.last_daily).getTime() : s.lastDailyAt,
+            profile: {
+              ...s.profile,
+              tier: save.tier ?? s.profile.tier,
+              marks,
+              badges: (save.badges ?? s.profile.badges) as BadgeId[],
+              nickname:
+                s.profile.customNickname || !save.nickname ? s.profile.nickname : save.nickname,
+              phoneNumber: save.phone_number ?? s.profile.phoneNumber,
+              anonymousNumber: save.phone_number ? true : s.profile.anonymousNumber,
+              altNames: save.alt_names ?? s.profile.altNames,
+              bio: save.bio ?? s.profile.bio,
+              accent: save.accent ?? s.profile.accent,
+              gradient: save.gradient ?? s.profile.gradient,
+            },
+          };
+        }),
+
+      adoptServerProfile: (server) =>
+        set((s) => {
+          const marks = [...server.marks];
+          // Premium is one thing: the tier and the tick always travel together
+          if (server.tier === "Premium" && !marks.includes("premium")) marks.push("premium");
+          const sameMarks =
+            marks.length === s.profile.marks.length &&
+            marks.every((m) => s.profile.marks.includes(m));
+          const sameBadges =
+            server.badges.length === s.profile.badges.length &&
+            server.badges.every((b) => s.profile.badges.includes(b));
+          const sameAlt =
+            server.altNames.length === s.profile.altNames.length &&
+            server.altNames.every((n) => s.profile.altNames.includes(n));
+          const sameStars = Math.round(server.stars) === Math.round(s.stars);
+          const sameNick = server.nickname === s.profile.nickname;
+          const samePhone = (server.phoneNumber ?? null) === (s.profile.phoneNumber ?? null);
+          const sameCosmetics =
+            server.bio === s.profile.bio &&
+            server.accent === s.profile.accent &&
+            server.gradient === s.profile.gradient;
+
+          // nothing changed: keep the same object so React does not re-render
+          if (
+            sameMarks &&
+            sameBadges &&
+            sameAlt &&
+            sameStars &&
+            sameNick &&
+            samePhone &&
+            sameCosmetics &&
+            server.tier === s.profile.tier
+          ) {
+            return {};
+          }
+
+          return {
+            // stars may only grow from a pull: a stale row (still 1500 while
+            // the local balance is already 1600 from a fresh win) must never
+            // drag the on-screen balance back down.
+            stars: Math.max(s.stars, Math.round(server.stars)),
+            profile: {
+              ...s.profile,
+              tier: server.tier,
+              marks,
+              badges: sameBadges ? s.profile.badges : server.badges,
+              // the server name only wins when the player never renamed
+              nickname: sameNick || s.profile.customNickname ? s.profile.nickname : server.nickname,
+              phoneNumber: samePhone
+                ? s.profile.phoneNumber
+                : server.phoneNumber,
+              anonymousNumber: server.phoneNumber ? true : s.profile.anonymousNumber,
+              altNames: sameAlt ? s.profile.altNames : server.altNames,
+              bio: server.bio,
+              accent: server.accent,
+              gradient: server.gradient,
+            },
+          };
+        }),
 
       adminGrantStars: (n) => set((s) => ({ stars: Math.max(0, s.stars + n) })),
       adminGrantAllGifts: () =>
@@ -558,6 +966,8 @@ export const useGame = create<State>()(
 
       toggleSetting: (key) => set((s) => ({ settings: { ...s.settings, [key]: !s.settings[key] } })),
       setTheme: (id) => set({ theme: id }),
+      setDeviceMode: (m) => set({ deviceMode: m }),
+      chooseDevice: (m) => set({ deviceMode: m, deviceChosen: true }),
       bumpStat: (key, by = 1) => set((s) => ({ stats: { ...s.stats, [key]: s.stats[key] + by } })),
 
       toast: (t) => {
@@ -571,12 +981,15 @@ export const useGame = create<State>()(
     }),
     {
       name: "telegup:state:v2",
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         if (!Array.isArray(state.profile?.marks)) {
           state.profile = { ...state.profile, marks: [] };
+        }
+        if (!Array.isArray(state.profile?.altNames)) {
+          state.profile = { ...state.profile, altNames: [] };
         }
       },
       migrate: (persisted: unknown) => {
@@ -590,6 +1003,10 @@ export const useGame = create<State>()(
           collectibleUsername: s.profile?.collectibleUsername ?? null,
           phoneNumber: s.profile?.phoneNumber ?? null,
           customNickname: Boolean(s.profile?.customNickname),
+          altNames: Array.isArray(s.profile?.altNames) ? s.profile.altNames : [],
+          accent: s.profile?.accent ?? null,
+          gradient: s.profile?.gradient ?? null,
+          bio: s.profile?.bio ?? null,
         };
         if (profile.anonymousNumber && !profile.phoneNumber) profile.phoneNumber = generateAnonymousNumber();
         // older saves could carry the mark after the tier was removed — drop
@@ -610,14 +1027,19 @@ export const useGame = create<State>()(
         stars: s.stars,
         coins: s.coins,
         onlineUserId: s.onlineUserId,
+        cloudLoadedFor: s.cloudLoadedFor,
+        ownerSyncSeen: s.ownerSyncSeen,
         inventory: s.inventory,
         profile: s.profile,
         joinedAt: s.joinedAt,
         lastFreeCaseAt: s.lastFreeCaseAt,
         lastDailyAt: s.lastDailyAt,
+        lastFortuneAt: s.lastFortuneAt,
         admin: s.admin,
         settings: s.settings,
         theme: s.theme,
+        deviceMode: s.deviceMode,
+        deviceChosen: s.deviceChosen,
         stats: s.stats,
         shopItems: s.shopItems,
       }),

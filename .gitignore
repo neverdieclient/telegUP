@@ -16,6 +16,13 @@ dist-ssr
 !.env.example
 !.env.production
 
+# Scratch SQL / local debug queries
+.q*.sql
+# Videotrailer build artifacts (sources stay tracked, output/frames/renders do not)
+trailer/frames/
+trailer/*.mp4
+trailer/out/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

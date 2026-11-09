@@ -50,8 +50,16 @@ set search_path = public
 as $$
 begin
   perform public.owner_gate();
+
+  -- the 'owner' mark is the key to this panel: removing it would lock the
+  -- owner out of their own admin functions forever, so it stays
+  if mark = 'owner' then
+    raise exception 'owner mark cannot be removed';
+  end if;
+
   update public.profiles p
-     set marks = array(select m from unnest(p.marks) m where m <> mark)
+     set marks = array(select m from unnest(p.marks) m where m <> mark),
+         owner_synced_at = now()
    where p.id = target_id;
 end;
 $$;

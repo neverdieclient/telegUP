@@ -22,6 +22,8 @@ export default function ProfilePage() {
   const toast = useGame((s) => s.toast);
   const theme = useGame((s) => s.theme);
   const setTheme = useGame((s) => s.setTheme);
+  const deviceMode = useGame((s) => s.deviceMode);
+  const chooseDevice = useGame((s) => s.chooseDevice);
   const { user } = useAuth();
 
   const [draft, setDraft] = useState(profile.nickname);
@@ -62,9 +64,7 @@ export default function ProfilePage() {
     toast({ kind: "success", title: "Никнейм обновлён", message: `@${clean}` });
   };
 
-  const activeMarks = MARKS.filter(
-    (m) => profile.marks.includes(m.id) || (m.id === "premium" && profile.tier === "Premium"),
-  );
+  const activeMarks = MARKS.filter((m) => m.id === "basic" && profile.marks.includes("basic"));
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4">
@@ -93,11 +93,6 @@ export default function ProfilePage() {
                   {profile.nickname.slice(0, 1).toUpperCase()}
                 </span>
               </div>
-              {profile.tier === "Premium" && (
-                <span className="absolute -bottom-2 -right-2 grid size-8 place-items-center rounded-full bg-[#0f0f13]">
-                  <CheckMark kind="premium" size={26} />
-                </span>
-              )}
             </div>
 
             <div className="min-w-0 flex-1">
@@ -122,7 +117,7 @@ export default function ProfilePage() {
                 ) : (
                   <>
                     <h2 className="truncate font-display text-[26px] font-black leading-none tracking-tight">
-                      @{profile.nickname}
+                      {profile.nickname}
                     </h2>
                     <span className="inline-flex items-center gap-1">
                       {activeMarks.map((m) => (
@@ -142,15 +137,28 @@ export default function ProfilePage() {
                 )}
               </div>
 
+              {/* handle right under the nick, then the extra names */}
+              <p className="mt-1 truncate text-[13px] font-bold text-sky-400">
+                @{profile.nickname}
+              </p>
+              {(profile.altNames.length > 0 || profile.collectibleUsername) && (
+                <p className="mt-0.5 truncate text-[11.5px] font-semibold text-sky-400/80">
+                  а также{" "}
+                  {(profile.altNames.length > 0
+                    ? profile.altNames
+                    : [profile.collectibleUsername as string]
+                  )
+                    .map((n) => `@${n.replace(/^@/, "")}`)
+                    .join(", ")}
+                </p>
+              )}
+
               <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-white/40">
                 <span className="rounded-md border border-neon/25 bg-neon/10 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-neon">
                   {profile.tier}
                 </span>
                 {profile.anonymousNumber && (
                   <span className="tabular-nums">{profile.phoneNumber ?? "+888"}</span>
-                )}
-                {profile.collectibleUsername && (
-                  <span className="text-violet">второй ник @{profile.collectibleUsername}</span>
                 )}
                 {user?.email ? (
                   <span className="text-white/25">{user.email}</span>
@@ -242,6 +250,28 @@ export default function ProfilePage() {
             <Row label="Онлайн-аккаунт" hint="прогресс в облаке">
               <span className="text-[11px] font-bold text-white/40">{user ? "включён" : "выключен"}</span>
             </Row>
+            <Row label="Версия" hint="компьютерная или мобильная раскладка">
+              <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/30 p-0.5">
+                {([
+                  { id: "auto" as const, label: "Комп" },
+                  { id: "mobile" as const, label: "Телефон" },
+                ]).map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => chooseDevice(v.id)}
+                    className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                      (v.id === "mobile" && deviceMode === "mobile") ||
+                      (v.id === "auto" && deviceMode !== "mobile")
+                        ? "bg-neon/20 text-neon"
+                        : "text-white/40 hover:text-white/75"
+                    }`}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            </Row>
           </div>
 
           <div className="mt-4 border-t border-white/6 pt-3">
@@ -317,26 +347,6 @@ export default function ProfilePage() {
             </div>
           </div>
         )}
-      </section>
-
-      <section className="rounded-3xl border border-white/8 bg-white/[0.025] p-4">
-        <h3 className="mb-3 text-[13px] font-extrabold tracking-tight">Знаки верификации</h3>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {MARKS.map((m) => (
-            <div
-              key={m.id}
-              className={`flex items-center gap-2.5 rounded-2xl border px-3 py-2 ${
-                profile.marks.includes(m.id) ? "border-neon/25 bg-neon/[0.06]" : "border-white/8 bg-black/25"
-              }`}
-            >
-              <CheckMark kind={m.id} size={22} title={m.label} />
-              <div className="min-w-0">
-                <p className="text-[11.5px] font-bold text-white/85">{m.label}</p>
-                <p className="text-[10px] text-white/30">{m.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
       </section>
 
       <section className="rounded-3xl border border-white/8 bg-white/[0.025] p-4">

@@ -14,6 +14,13 @@ export type PlayerRow = {
   badges: string[];
   marks: string[];
   created_at: string;
+  /** set by any owner write — newer than `syncedAt` means "accept the server" */
+  owner_synced_at?: string | null;
+  phone_number?: string | null;
+  alt_names?: string[];
+  bio?: string | null;
+  accent?: string | null;
+  gradient?: string | null;
 };
 
 export type AuthState = {
@@ -126,8 +133,42 @@ export async function adminSetTier(targetId: string, tier: "Premium" | "Free"): 
   return error ? { error: error.message } : {};
 }
 
-/** Top players ordered by their inventory value (fallback: stars). */
-export async function fetchTop(limit = 50): Promise<PlayerRow[]> {
+/* ---------------------------------------------------------------- chat */
+
+export type ChatRow = {
+  id: string | number;
+  user_id: string;
+  nickname: string;
+  body: string;
+  created_at: string;
+};
+
+/** Newest `limit` messages, oldest first (ready to render top-down). */
+export async function fetchChat(limit = 150): Promise<ChatRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .select("id, user_id, nickname, body, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error || !data) return [];
+  return (data as ChatRow[]).slice().reverse();
+}
+
+export async function postChat(body: string, nickname: string): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth.user?.id;
+  if (!uid) return { error: "Нужно войти в аккаунт" };
+  const { error } = await supabase.from("chat_messages").insert({
+    user_id: uid,
+    nickname,
+    body: body.slice(0, 500),
+  });
+  return error ? { error: error.message } : {};
+}
+
+/** Top players ordered by their inventory value (fallback: stars). */export async function fetchTop(limit = 50): Promise<PlayerRow[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("profiles")
@@ -156,6 +197,10 @@ export async function searchPlayers(query: string, limit = 20): Promise<PlayerRo
  * Send a gift to another player. The local item is already removed from the
  * sender's inventory by the caller; this only writes the online record.
  * Without a backend (or a signed-in account) this is a no-op (local sim).
+ *
+ * NOTE: a player's client cannot read another player's `gifts` rows, so this
+ * is the *history* only. Gifts handed out by the owner go through
+ * `ownerDeliverGift` below, which lands in the recipient's inventory.
  */
 export async function sendGift(payload: {
   fromId: string;
@@ -177,6 +222,144 @@ export async function sendGift(payload: {
     gift_name: payload.giftName,
     gift_stars: payload.giftStars,
     message: payload.message ?? null,
+  });
+  return error ? { error: error.message } : {};
+}
+
+/* ------------------------------------------------------- owner deliveries */
+
+/**
+ * Owner → player gift. Written to `deliveries` because a player's client can
+ * read that table for itself; a plain `gifts` insert was invisible to the
+ * recipient and never reached their inventory.
+ */
+export async function ownerDeliverGift(
+  targetId: string,
+  giftId: string,
+  giftName: string,
+  message?: string,
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_deliver_gift", {
+    target_id: targetId,
+    p_gift_id: giftId,
+    p_gift_name: giftName,
+    message: message ?? null,
+  });
+  return error ? { error: error.message } : {};
+}
+
+export type DeliveryRow = {
+  id: number;
+  user_id: string;
+  gift_id: string;
+  gift_name: string;
+  from_name: string | null;
+  message: string | null;
+  claimed: boolean;
+  created_at: string;
+};
+
+/** Unclaimed gifts waiting for the signed-in player. */
+export async function fetchDeliveries(): Promise<DeliveryRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("deliveries")
+    .select("*")
+    .eq("claimed", false)
+    .order("created_at", { ascending: true })
+    .limit(50);
+  if (error || !data) return [];
+  return data as DeliveryRow[];
+}
+
+export async function claimDelivery(id: number): Promise<void> {
+  if (!supabase) return;
+  await supabase.from("deliveries").update({ claimed: true }).eq("id", id);
+}
+
+export type CloudSave = {
+  stars: number;
+  inventory: unknown[];
+  inventory_value: number;
+  items: number;
+  last_free_case: string | null;
+  last_daily: string | null;
+  joined_at: string | null;
+  save_rev: number;
+  nickname: string;
+  tier: "Free" | "Premium";
+  marks: string[];
+  badges: string[];
+  phone_number: string | null;
+  alt_names: string[];
+  bio: string | null;
+  accent: string | null;
+  gradient: string | null;
+  owner_synced_at: string | null;
+};
+
+/* --------------------------------------------------------- profile pushes */
+
+/** Server-side profile write that can never clobber an owner grant. */
+export async function pushProfileSafe(row: {
+  username: string;
+  nickname: string;
+  stars: number;
+  inventory_value: number;
+  items: number;
+  inventory?: unknown[];
+  lastFreeCase?: number | null;
+  lastDaily?: number | null;
+  joinedAt?: number | null;
+}): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("player_push_profile", {
+    p_username: row.username,
+    p_nickname: row.nickname,
+    p_stars: Math.round(row.stars),
+    p_inventory_value: Math.round(row.inventory_value),
+    p_items: row.items,
+    p_marks: null,
+    p_badges: null,
+    p_inventory: row.inventory ?? null,
+    p_last_free_case: row.lastFreeCase ? new Date(row.lastFreeCase).toISOString() : null,
+    p_last_daily: row.lastDaily ? new Date(row.lastDaily).toISOString() : null,
+    p_joined_at: row.joinedAt ? new Date(row.joinedAt).toISOString() : null,
+  });
+  if (error) return null;
+  return typeof data === "string" ? data : null;
+}
+
+/** Read this account's cloud save. Returns null offline or when the row is missing. */
+export async function pullCloudSave(): Promise<CloudSave | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("player_pull_profile");
+  if (error || !data) return null;
+  return data as CloudSave;
+}
+
+/** Owner edit of another player's cosmetics and number. */
+export async function ownerSetProfile(
+  targetId: string,
+  patch: {
+    nickname?: string | null;
+    bio?: string | null;
+    accent?: string | null;
+    gradient?: string | null;
+    phone?: string | null;
+    altNames?: string[] | null;
+  },
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_set_profile", {
+    target_id: targetId,
+    p_nickname: patch.nickname ?? null,
+    p_bio: patch.bio ?? null,
+    p_accent: patch.accent ?? null,
+    p_gradient: patch.gradient ?? null,
+    p_phone: patch.phone ?? null,
+    p_alt_names: patch.altNames ?? null,
   });
   return error ? { error: error.message } : {};
 }

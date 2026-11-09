@@ -26,6 +26,11 @@
   --animate-pulse-soft: pulseSoft 3.5s ease-in-out infinite;
   --animate-shimmer: shimmer 2.6s linear infinite;
   --animate-spin-slow: spin 14s linear infinite;
+
+  /* gift artwork: gentle hover + a single travelling specular highlight */
+  --animate-gift-bob: giftBob 4.6s ease-in-out infinite;
+  --animate-gift-sheen: giftSheen 3.8s ease-in-out infinite;
+  --animate-gift-halo: giftHalo 5.2s ease-in-out infinite;
 }
 
 @keyframes float {
@@ -46,6 +51,86 @@
 @keyframes gridDrift {
   0% { background-position: 0 0, 0 0; }
   100% { background-position: 0 120px, 0 120px; }
+}
+
+/* --- gift artwork animations ------------------------------------------- */
+
+@keyframes giftBob {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  35% { transform: translate3d(0, -4%, 0) rotate(-2.2deg) scale(1.03); }
+  70% { transform: translate3d(0, 1.5%, 0) rotate(1.6deg) scale(1.01); }
+}
+
+@keyframes giftSheen {
+  0% { transform: translateX(-160%) rotate(18deg); opacity: 0; }
+  18% { opacity: 0.85; }
+  55% { opacity: 0.5; }
+  100% { transform: translateX(220%) rotate(18deg); opacity: 0; }
+}
+
+@keyframes giftHalo {
+  0%, 100% { opacity: 0.34; transform: scale(0.92); }
+  50% { opacity: 0.72; transform: scale(1.08); }
+}
+
+@keyframes giftPop {
+  0% { transform: scale(0.86) rotate(-4deg); opacity: 0; }
+  55% { transform: scale(1.06) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes giftRays {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Respect the in-app "Анимации" switch and the OS preference. */
+.reduce-motion [data-gift-motion],
+.reduce-motion [data-gift-motion] * {
+  animation: none !important;
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gift-motion],
+  [data-gift-motion] * {
+    animation: none !important;
+  }
+}
+
+/* --- forced mobile version --------------------------------------------- */
+/*
+ * The first-visit screen can pin the phone layout on any screen. The shell is
+ * centred in a phone-width frame and the desktop-only sidebar is hidden, so
+ * the bottom tab bar (already `md:hidden`) becomes the only navigation.
+ */
+html[data-device="mobile"] body {
+  background: #050506;
+}
+
+html[data-device="mobile"] #root {
+  max-width: 480px;
+  margin-inline: auto;
+  min-height: 100dvh;
+  border-inline: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 80px rgba(0, 0, 0, 0.6);
+}
+
+/* the sidebar is a desktop-only element: hide it in the forced phone frame */
+html[data-device="mobile"] aside {
+  display: none !important;
+}
+
+/* ...and the desktop top-links go too; the bottom bar stays */
+html[data-device="mobile"] header nav.lg\:flex {
+  display: none !important;
+}
+
+/* the bottom tab bar is `md:hidden`, bring it back inside the frame */
+html[data-device="mobile"] nav.fixed.inset-x-0.bottom-0 {
+  display: block !important;
+  max-width: 480px;
+  margin-inline: auto;
 }
 
 @layer base {

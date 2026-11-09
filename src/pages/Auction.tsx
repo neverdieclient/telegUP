@@ -30,6 +30,8 @@ const LS_KEY = "telegup:auction:v2";
 const BID_WINDOW_MS = 10 * 60 * 1000;
 /** House lots refresh this often. */
 const CYCLE_MS = 5 * 60 * 60 * 1000;
+/** A lot that gets no bid for this long goes back to its owner. */
+const NO_BID_RETURN_MS = 30 * 60 * 1000;
 /** How many house lots are on the block at once. */
 const HOUSE_LOTS = 6;
 
@@ -129,12 +131,33 @@ function ensureLocalLots(): LocalLot[] {
   const house = lots.filter((l) => l.seller_id === "house");
   const users = lots.filter((l) => l.seller_id !== "house");
   const houseCycle = house[0]?.cycle ?? -1;
-  if (house.length && houseCycle === cycle) return lots;
+
+  const openUsers = users.filter((l) => !l.sold && !l.cancelled);
+  const keeping = openUsers.filter((l) => !isStale(l));
+  if (house.length && houseCycle === cycle) return [...openUsers, ...house];
 
   const fresh = buildHouseLots(cycle);
-  const next = [...users.filter((l) => !l.sold && !l.cancelled), ...fresh];
+  const next = [...keeping, ...fresh];
   writeLocal(next);
   return next;
+}
+
+/**
+ * A lot that has had no bids at all and has been sitting for 30 minutes goes
+ * back to its owner. House lots are exempt — they rotate on their own cycle.
+ */
+function isStale(lot: LocalLot, now = Date.now()): boolean {
+  if (lot.seller_id === "house") return false;
+  if (lot.sold || lot.cancelled) return false;
+  if (lot.top_bid > 0) return false;
+  return new Date(lot.created_at).getTime() + NO_BID_RETURN_MS <= now;
+}
+
+/** Milliseconds until the next no-bid return, or null when not applicable. */
+function returnIn(lot: LocalLot): number | null {
+  if (lot.seller_id === "house" || lot.top_bid > 0) return null;
+  const left = new Date(lot.created_at).getTime() + NO_BID_RETURN_MS - Date.now();
+  return Math.max(0, left);
 }
 
 /* ------------------------------------------------------------------ helpers */
@@ -155,6 +178,14 @@ function timeLeft(endsAt: string): { ms: number; label: string } {
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
+}
+
+/** mm:ss for countdowns under an hour. */
+function fmtLeft(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 const ME = "local";
@@ -214,7 +245,9 @@ export default function Auction() {
           l.top_bid > 0 &&
           new Date(l.ends_at).getTime() <= now,
       );
-      if (!expired.length) return;
+      // lots nobody bid on within 30 minutes go home to their owner
+      const stale = current.filter((l) => isStale(l, now));
+      if (!expired.length && !stale.length) return;
 
       // the countdown hit zero and nobody outbid us — the gift is ours
       let next = current;
@@ -226,6 +259,25 @@ export default function Auction() {
         next = next.map((l) => (l.id === lot.id ? { ...l, sold: true } : l));
         toast({ kind: "gift", title: "Лот твой!", message: `${lot.item_name} · ${fmt(lot.top_bid)} ★` });
       }
+
+      for (const lot of stale) {
+        const key = `stale:${lot.id}`;
+        if (settledRef.current.has(key)) continue;
+        settledRef.current.add(key);
+        // if it was my own lot, the item comes back into my inventory
+        if (lot.seller_id === ME && lot.item_kind === "gift" && GIFT_BY_ID[lot.item_id]) {
+          addItem(lot.item_id, "market");
+          toast({
+            kind: "info",
+            title: "Лот вернулся",
+            message: `${lot.item_name} — за 30 минут ставок не было`,
+          });
+        }
+        next = next.map((l) =>
+          l.id === lot.id ? { ...l, cancelled: true, cancel_reason: "no_bids" } : l,
+        );
+      }
+
       writeLocal(next);
       setLots(next);
     }, 1000);
@@ -363,7 +415,7 @@ export default function Auction() {
           <p className="text-[10.5px] font-bold uppercase tracking-[0.2em] text-neon/80">Marketplace</p>
           <h1 className="mt-1 font-display text-3xl font-black tracking-tight">Аукцион</h1>
           <p className="mt-1 text-[12.5px] text-white/35">
-            Ставка держит лот 10 минут · обновление витрины каждые 5 часов
+            Ставка держит лот 10 минут · без ставок за 30 минут лот вернётся владельцу
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
@@ -499,6 +551,9 @@ function LotCard({
   // a lot is "live" once the first bid started its 10-minute clock
   const started = lot.top_bid > 0;
   const mine = lot.top_bidder === ME;
+  const back = returnIn(lot);
+  const backLabel =
+    back === null ? null : back <= 0 ? "возврат…" : fmtLeft(back);
 
   return (
     <motion.article
@@ -538,9 +593,15 @@ function LotCard({
             ? mine
               ? "Ты лидер · лот твой через"
               : `Лидер ${lot.top_bidder_name ?? "?"} · осталось`
-            : "Ждёт первой ставки"}
+            : backLabel
+              ? "Без ставок · вернётся владельцу через"
+              : "Ждёт первой ставки"}
         </span>
-        {started && <span className="tabular-nums">{left.label}</span>}
+        {started ? (
+          <span className="tabular-nums">{left.label}</span>
+        ) : backLabel ? (
+          <span className="tabular-nums">{backLabel}</span>
+        ) : null}
       </div>
 
       {left.ms > 0 ? (
@@ -649,7 +710,7 @@ function NewLot({
       setPicked(null);
       setMinBid("");
       setBuyout("");
-      toast({ kind: "gift", title: "Лот выставлен", message: gift.name });
+      toast({ kind: "gift", title: "Лот выставлен", message: "без ставок 30 минут — вернётся к тебе" });
       onCreated();
     } finally {
       setBusy(false);

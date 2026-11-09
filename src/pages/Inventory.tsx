@@ -26,6 +26,7 @@ const SOURCE_LABEL: Record<string, string> = {
   wheel: "wheel",
   coinflip: "coinflip",
   tower: "tower",
+  craft: "крафт",
 };
 
 export default function Inventory() {

@@ -70,7 +70,9 @@ export default function Shop() {
                 )}
               </p>
               {profile.collectibleUsername && (
-                <p className="text-[11px] font-bold text-violet">второй ник: @{profile.collectibleUsername}</p>
+                <p className="text-[11px] font-bold text-sky-400">
+                  а также @{profile.collectibleUsername}
+                </p>
               )}
             </div>
           </div>

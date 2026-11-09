@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useGame } from "../store/useGame";
+import { useGame, formatPhoneNumber, PHONE_FORMATS } from "../store/useGame";
 import { BADGES, BADGE_BY_ID, DISCLAIMER, GIFT_BY_ID, GIFTS, RARITY_META, type BadgeId } from "../data/gifts";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
@@ -16,8 +16,9 @@ import {
   fetchPlayer,
   fetchTop,
   grantMark,
+  ownerDeliverGift,
+  ownerSetProfile,
   searchPlayers,
-  sendGift,
   type PlayerRow,
 } from "../lib/players";
 import { getLocalSession, localSignIn, isOwnerEmail, verifyOwner } from "../lib/localAuth";
@@ -33,10 +34,7 @@ import { getLocalSession, localSignIn, isOwnerEmail, verifyOwner } from "../lib/
 const OWNER_EMAIL = "oleg123456789123456@gmail.com";
 
 const MARK_LIST: { id: CheckMarkKind; label: string }[] = [
-  { id: "owner", label: "Овнер" },
-  { id: "premium", label: "Premium" },
   { id: "basic", label: "Проверенный" },
-  { id: "crown", label: "Коллекционный" },
 ];
 
 function Panel({
@@ -286,6 +284,8 @@ export default function Admin() {
   const adminGrantAllGifts = useGame((s) => s.adminGrantAllGifts);
   const adminClearInventory = useGame((s) => s.adminClearInventory);
   const adminReset = useGame((s) => s.adminReset);
+  const admin = useGame((s) => s.admin);
+  const setAdmin = useGame((s) => s.setAdmin);
   const toggleMark = useGame((s) => s.toggleMark);
   const addItem = useGame((s) => s.addItem);
   const toast = useGame((s) => s.toast);
@@ -300,7 +300,22 @@ export default function Admin() {
   /** account currently being acted on (from the search list) */
   const [target, setTarget] = useState<PlayerRow | null>(null);
   const [targetGiftQuery, setTargetGiftQuery] = useState("");
+  const [lookNick, setLookNick] = useState("");
+  const [lookBio, setLookBio] = useState("");
+  const [lookAlt, setLookAlt] = useState("");
+  const [lookPhone, setLookPhone] = useState("");
+  /** which "+888 X XXX" preset new numbers use */
+  const [phoneFormat, setPhoneFormat] = useState("x-xxx");
   const [busy, setBusy] = useState<string | null>(null);
+
+  // keep the cosmetics form in step with the selected account
+  useEffect(() => {
+    if (!target) return;
+    setLookNick(target.nickname ?? "");
+    setLookBio(target.bio ?? "");
+    setLookAlt((target.alt_names ?? []).join(", "));
+    setLookPhone(target.phone_number ?? "");
+  }, [target?.id]);
 
   useEffect(() => {
     if (!isOwner) return;
@@ -360,19 +375,16 @@ export default function Admin() {
     const gift = GIFT_BY_ID[giftId];
     if (!gift || !user || !target) return;
     await run(`gift:${giftId}`, `Подарок «${gift.name}» → @${target.nickname}`, async () => {
-      const res = await sendGift({
-        fromId: user.id,
-        fromName: profile.nickname,
-        toId: target.id,
-        toName: target.nickname,
+      const res = await ownerDeliverGift(
+        target.id,
         giftId,
-        giftName: gift.variant === "Gift" ? gift.name : `${gift.name} · ${gift.variant}`,
-        giftStars: gift.stars,
-        message: "Подарок от владельца",
-      });
+        gift.variant === "Gift" ? gift.name : `${gift.name} · ${gift.variant}`,
+        "Подарок от владельца",
+      );
       return res;
     });
     setTargetGiftQuery("");
+    void refreshTarget(target.id);
   };
 
   const giveStarsToTarget = async (n: number) => {
@@ -411,6 +423,18 @@ export default function Admin() {
     if (!target) return;
     await run(`tier`, `@${target.nickname}: ${premium ? "Premium" : "Free"}`, () =>
       adminSetTier(target.id, premium ? "Premium" : "Free"),
+    );
+    void refreshTarget(target.id);
+  };
+
+  /** Owner edit of the selected account's cosmetics / number. */
+  const saveTargetCosmetics = async (
+    label: string,
+    patch: Parameters<typeof ownerSetProfile>[1],
+  ) => {
+    if (!target) return;
+    await run(`look:${label}`, `${label} → @${target.nickname}`, () =>
+      ownerSetProfile(target.id, patch),
     );
     void refreshTarget(target.id);
   };
@@ -585,10 +609,36 @@ export default function Admin() {
               {MARK_LIST.map((m) => {
                 const on = m.id === "premium" ? selfTier === "Premium" : selfMarks.includes(m.id);
                 const click = () => {
+                  // 'Овнер' is the key to this panel — removing it would lock
+                  // the account out of every admin function for good.
+                  if (m.id === "owner" && on) {
+                    toast({
+                      kind: "error",
+                      title: "Знак «Овнер» убрать нельзя",
+                      message: "Он открывает админку — иначе доступ потеряется навсегда",
+                    });
+                    return;
+                  }
                   if (isSelf) {
                     // premium goes through the tier so the tick cannot come back
-                    if (m.id === "premium") adminGrantPremium(profile.tier !== "Premium");
-                    else toggleMark(m.id);
+                    if (m.id === "premium") {
+                      adminGrantPremium(profile.tier !== "Premium");
+                      return;
+                    }
+                    // a tick removed only in this browser comes back from the
+                    // DB on the next reload, so push the change to the server
+                    // whenever the owner is really signed in
+                    if (onlineEnabled && user) {
+                      void run(
+                        `mark:${m.id}`,
+                        `${on ? "Снять знак" : "Знак"} «${m.label}» у себя`,
+                        () =>
+                          on ? adminTakeMark(user.id, m.id) : grantMark(user.id, m.id),
+                      );
+                      toggleMark(m.id);
+                      return;
+                    }
+                    toggleMark(m.id);
                     return;
                   }
                   if (m.id === "premium") setTargetTier(selfTier !== "Premium");
@@ -614,8 +664,19 @@ export default function Admin() {
                   <button
                     key={b.id}
                     onClick={() => {
-                      if (isSelf) (on ? adminRevokeBadge(b.id) : adminGrantBadge(b.id));
-                      else giveBadgeToTarget(b.id, b.label, !on);
+                      if (isSelf) {
+                        // same as ticks: a browser-only change is undone by the
+                        // next reload, so mirror it to the DB when signed in
+                        if (onlineEnabled && user) {
+                          void run(`badge:${b.id}`, `Бейдж «${b.label}»`, () =>
+                            on ? adminTakeBadge(user.id, b.id) : adminGiveBadge(user.id, b.id),
+                          );
+                        }
+                        if (on) adminRevokeBadge(b.id);
+                        else adminGrantBadge(b.id);
+                        return;
+                      }
+                      giveBadgeToTarget(b.id, b.label, !on);
                     }}
                     className={`flex items-center justify-between gap-1 rounded-xl border px-2 py-1.5 text-left ${
                       on ? "bg-white/[0.06]" : "border-white/8 hover:bg-white/[0.04]"
@@ -630,6 +691,101 @@ export default function Admin() {
                 );
               })}
             </div>
+
+            {/* cosmetics of the selected account */}
+            {target && (
+              <>
+                <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+                  красоты → @{target.nickname}
+                </p>
+                <div className="space-y-1.5">
+                  <input
+                    value={lookNick}
+                    onChange={(e) => setLookNick(e.target.value)}
+                    placeholder="Ник"
+                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+                  />
+                  <input
+                    value={lookBio}
+                    onChange={(e) => setLookBio(e.target.value)}
+                    placeholder="Статус / био"
+                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+                  />
+                  <input
+                    value={lookAlt}
+                    onChange={(e) => setLookAlt(e.target.value)}
+                    placeholder="Доп. имена: @name1, @name2"
+                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+                  />
+
+                  {/* +888 number issuing */}
+                  <div className="rounded-xl border border-white/10 bg-black/30 p-2.5">
+                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+                      +888 номер
+                    </p>
+                    <div className="mb-2 flex flex-wrap gap-1">
+                      {PHONE_FORMATS.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setPhoneFormat(f.id)}
+                          className={`rounded-lg border px-2 py-1 text-[10.5px] font-bold transition ${
+                            phoneFormat === f.id
+                              ? "border-neon/40 bg-neon/15 text-neon"
+                              : "border-white/10 bg-white/[0.03] text-white/45 hover:text-white/80"
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-1.5">
+                      <input
+                        value={lookPhone}
+                        onChange={(e) => setLookPhone(e.target.value)}
+                        placeholder={PHONE_FORMATS.find((f) => f.id === phoneFormat)?.label ?? "+888 X XXX"}
+                        className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] tabular-nums text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setLookPhone(formatPhoneNumber("", phoneFormat))}
+                        className="shrink-0 rounded-xl border border-violet/30 bg-violet/15 px-3 py-2 text-[11px] font-bold text-violet hover:bg-violet/25"
+                      >
+                        Рандом
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLookPhone("")}
+                        className="shrink-0 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-bold text-white/45 hover:text-white/80"
+                      >
+                        Сброс
+                      </button>
+                    </div>
+                    <p className="mt-1.5 text-[10px] text-white/25">
+                      Своё значение подставляется в выбранный формат: «8888 8» → +888 8 888.
+                    </p>
+                  </div>
+
+                  <button
+                    disabled={busy === "look:save"}
+                    onClick={() =>
+                      saveTargetCosmetics("Красоты", {
+                        nickname: lookNick.trim() || null,
+                        bio: lookBio.trim() || null,
+                        altNames: lookAlt
+                          .split(",")
+                          .map((s) => s.replace(/^@/, "").trim())
+                          .filter(Boolean),
+                        phone: lookPhone.trim() ? formatPhoneNumber(lookPhone, phoneFormat) : null,
+                      })
+                    }
+                    className="w-full rounded-xl bg-white/10 py-2 text-[11.5px] font-bold text-white/80 hover:bg-white/15 disabled:opacity-40"
+                  >
+                    {busy === "look:save" ? "Сохраняю…" : "Сохранить профиль игрока"}
+                  </button>
+                </div>
+              </>
+            )}
 
             {/* gift to the selected account */}
             <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
@@ -735,6 +891,44 @@ export default function Admin() {
           <Button full size="sm" variant="danger" className="mt-2" onClick={() => setConfirmReset(true)}>
             Полный сброс аккаунта
           </Button>
+        </Panel>
+
+        {/* ---------------- site mode ---------------- */}
+        <Panel
+          title="Сайт"
+          desc="Технические работы: кейсы, апгрейд, аукцион, маркет и мини-игры закрыты. Профиль, инвентарь, Telegram, настройки и чат остаются."
+          badge="site"
+        >
+          <button
+            onClick={() => setAdmin({ maintenance: !admin.maintenance })}
+            className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+              admin.maintenance
+                ? "border-amber-400/40 bg-amber-400/10"
+                : "border-white/8 bg-black/30 hover:bg-white/[0.04]"
+            }`}
+          >
+            <span className="min-w-0">
+              <span className="block text-[12.5px] font-extrabold">
+                {admin.maintenance ? "Технические работы включены" : "Сайт работает"}
+              </span>
+              <span className="mt-0.5 block text-[10.5px] text-white/35">
+                {admin.maintenance
+                  ? "Игроки видят только разрешённые разделы"
+                  : "Нажми, чтобы временно закрыть игры"}
+              </span>
+            </span>
+            <span
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                admin.maintenance ? "bg-amber-400" : "bg-white/12"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${
+                  admin.maintenance ? "left-[22px]" : "left-0.5"
+                }`}
+              />
+            </span>
+          </button>
         </Panel>
 
         {/* ---------------- stats ---------------- */}

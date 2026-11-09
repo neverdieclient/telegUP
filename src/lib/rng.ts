@@ -59,9 +59,13 @@ export function rollRarity(odds: Record<Rarity, number>): Rarity {
   return "common";
 }
 
-/** Roll a full gift out of a case: rarity first, then weight inside the rarity. */
-export function rollCase(c: Case, luckBoost = 0): Gift {
-  const pool = casePool(c);
+/** Roll a full gift out of a case: rarity first, then weight inside the rarity.
+ *  `capStars` drops any candidate above that value before the pick, so the
+ *  free daily case can never pay out a gift worth more than its ceiling. */
+export function rollCase(c: Case, luckBoost = 0, capStars = Infinity): Gift {
+  const full = casePool(c);
+  const capped = capStars === Infinity ? full : full.filter((g) => g.stars <= capStars);
+  const pool = capped.length ? capped : full;
   let rarity = rollRarity(c.odds);
 
   // optional admin "luck" nudge: re-roll low tiers upward
@@ -87,30 +91,34 @@ export function rollCase(c: Case, luckBoost = 0): Gift {
 export type RolledItem = { gift: Gift; id: string };
 
 /**
- * Star drops inside cases. Each case roll has a small chance of paying out
- * pure ★ instead of a gift — the honest weights below sum to 0.10, so one in
- * ten rolls is a star prize. Reward tiers are fixed and capped at 1,000 ★.
+ * Star drops inside cases. Each case roll has a healthy chance of paying out
+ * pure ★ instead of a gift — the honest weights below sum to 0.45, so almost
+ * one in two rolls pays stars. Tiers are small on purpose (50 / 100 / 200 are
+ * the common ones) and capped at 1,000 ★.
  */
-export const STAR_DROP_CHANCE = 0.1;
+export const STAR_DROP_CHANCE = 0.45;
 
 export type StarDrop = { stars: number; weight: number };
 
 export const STAR_DROPS: readonly StarDrop[] = [
-  { stars: 5, weight: 0.46 },
-  { stars: 10, weight: 0.22 },
-  { stars: 25, weight: 0.12 },
-  { stars: 50, weight: 0.09 },
-  { stars: 100, weight: 0.05 },
-  { stars: 250, weight: 0.03 },
-  { stars: 500, weight: 0.02 },
-  { stars: 1000, weight: 0.01 },
+  { stars: 50, weight: 0.40 },
+  { stars: 100, weight: 0.27 },
+  { stars: 200, weight: 0.16 },
+  { stars: 300, weight: 0.07 },
+  { stars: 500, weight: 0.05 },
+  { stars: 1000, weight: 0.03 },
+  // the jackpot: about one in a thousand star drops
+  { stars: 10_000, weight: 0.002 },
 ] as const;
+
+/** Hard ceiling for a single case payout — nobody can log in richer than this. */
+export const MAX_CASE_PAYOUT = 10_000;
 
 /** Roll a star prize, or 0 for "no star drop this time". */
 export function rollStarDrop(weights: readonly StarDrop[] = STAR_DROPS): number {
   if (rand() >= STAR_DROP_CHANCE) return 0;
   const picked = weightedPick(weights.map((d) => ({ ...d })));
-  return Math.min(1000, picked.stars);
+  return Math.min(MAX_CASE_PAYOUT, picked.stars);
 }
 
 /**
@@ -120,7 +128,7 @@ export function rollStarDrop(weights: readonly StarDrop[] = STAR_DROPS): number 
 export function rollLuck(boost: number): number {
   if (boost > 0 && rand() < STAR_DROP_CHANCE + boost * 0.1) {
     const picked = weightedPick(STAR_DROPS.map((d) => ({ ...d })));
-    return Math.min(1000, picked.stars);
+    return Math.min(MAX_CASE_PAYOUT, picked.stars);
   }
   return 0;
 }
@@ -146,7 +154,7 @@ export function modelOptions(gift: Gift): Gift[] {
   return GIFTS.filter((g) => g.slug === gift.slug && g.kind === "model");
 }
 
-export const MODEL_HOUSE_EDGE = 0.9;
+export const MODEL_HOUSE_EDGE = 0.86;
 
 /**
  * Chance to morph `from` into `to`. Both items belong to the same gift,

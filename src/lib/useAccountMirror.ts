@@ -46,13 +46,16 @@ export function useAccountMirror() {
       supabase?.auth.updateUser({ data: { username: name.toUpperCase() } });
     }
 
+    // Only the name travels up here. Marks, badges, tier and the phone number
+    // are owner-controlled: pushing the browser's local copy wiped every grant
+    // the owner had just made (the badge / tick came back for a moment, then a
+    // token refresh re-ran this effect and overwrote the row with the stale
+    // local arrays). The DB row is the source of truth for those fields,
+    // adopted in useGiftInbox once the owner stamp changes.
     upsertProfile({
       id: user.id,
       username: name.toUpperCase(),
       nickname: name,
-      tier: s.profile.tier,
-      badges: s.profile.badges,
-      marks: s.profile.marks,
     });
   }, [user, loading, setOnlineUserId]);
 

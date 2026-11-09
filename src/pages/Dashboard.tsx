@@ -5,6 +5,7 @@ import { useGame } from "../store/useGame";
 import { GIFTS, GIFT_BY_ID, RARITY_META, BADGE_BY_ID } from "../data/gifts";
 import { StarIcon, GiftArt } from "../components/gifts/GiftArt";
 import { CheckMark } from "../components/ui/CheckMark";
+import { FortuneGame } from "../components/FortuneGame";
 
 function StatTile({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
@@ -15,15 +16,11 @@ function StatTile({ label, value, accent }: { label: string; value: string; acce
   );
 }
 
-/** Verification marks shown next to the nickname. */
-function ProfileMarks({ marks, tier }: { marks: string[]; tier: string }) {
-  const list = new Set(marks);
+/** Verification marks shown next to the nickname — only «Проверенный». */
+function ProfileMarks({ marks }: { marks: string[] }) {
   return (
     <span className="inline-flex items-center gap-1">
-      {tier === "Premium" && <CheckMark kind="premium" size={15} />}
-      {list.has("owner") && <CheckMark kind="owner" size={15} />}
-      {list.has("basic") && <CheckMark kind="basic" size={15} />}
-      {list.has("crown") && <CheckMark kind="crown" size={15} />}
+      {marks.includes("basic") && <CheckMark kind="basic" size={15} />}
     </span>
   );
 }
@@ -64,7 +61,7 @@ export default function Dashboard() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl font-extrabold tracking-tight md:text-2xl">@{profile.nickname}</h1>
-                <ProfileMarks marks={profile.marks} tier={profile.tier} />
+                <ProfileMarks marks={profile.marks} />
                 <span className="rounded-full border border-neon/30 bg-neon/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-neon">
                   {profile.tier}
                 </span>
@@ -121,7 +118,10 @@ export default function Dashboard() {
       </section>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
-        {/* quick actions grid replaces the old clicker / activity panel */}
+        <div className="space-y-4">
+        {/* «Удача дня» — free, cooldown-gated daily earner */}
+        <FortuneGame />
+
         <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-white/[0.028] p-5 backdrop-blur-xl">
           <div className="pointer-events-none absolute inset-0 opacity-60 grid-bg" />
           <div className="relative mb-4">
@@ -155,6 +155,7 @@ export default function Dashboard() {
             <StatTile label="Баланс" value={stars.toLocaleString("ru-RU")} accent="text-neon" />
           </div>
         </section>
+        </div>
 
         {/* side: free case + recent */}
         <section className="space-y-4">
