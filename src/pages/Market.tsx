@@ -103,7 +103,7 @@ function LiveDropShelf({ drop, onBuy }: { drop: LiveDrop; onBuy: (gift: Gift) =>
                 ? "Скоро начнётся"
                 : drop.ends_at
                   ? `Осталось ${formatLeft(drop.msLeft)}`
-                  : "Бессрочно, пока владелец не закроет"}
+                  : null}
           </p>
         </div>
 
