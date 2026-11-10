@@ -163,11 +163,12 @@ export function customGiftsToGifts(list: CustomGiftRow[]): Gift[] {
 /* ----------------------------------------------------------- visibility */
 
 /**
- * Test gifts stay in the shared table but must only be buyable by the owner.
- * The whole catalogue is readable, so filtering happens here.
+ * Every published gift is visible to everyone — including «тест» ones, so other
+ * players can see that a gift exists and read «Недоступно» on its button. The
+ * *purchase* is what stays owner-only (see `isPurchasable`).
  */
-export function visibleCustomGifts(list: CustomGiftRow[], isOwner: boolean): CustomGiftRow[] {
-  return isOwner ? list : list.filter((c) => c.visibility === "public");
+export function visibleCustomGifts(list: CustomGiftRow[], _isOwner: boolean): CustomGiftRow[] {
+  return list;
 }
 
 export function isPurchasable(row: CustomGiftRow, isOwner: boolean): boolean {

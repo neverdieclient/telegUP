@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteCustomGift, saveCustomGift, slugFor, uploadCustomImage } from "../../data/customGifts";
 import type { CustomGiftDraft, CustomModel, CustomVisibility } from "../../data/customGifts";
 import { useCustomGiftRows, useCustomGiftStatus } from "../../lib/useCatalog";
+import { useIsOwnerEmail } from "../../lib/useIsOwnerEmail";
+import { useAuth } from "../../lib/players";
 import { useGame } from "../../store/useGame";
 import { GiftArt } from "../../components/gifts/GiftArt";
 import { Button } from "../../components/ui/Button";
@@ -20,6 +22,37 @@ const EMPTY: CustomGiftDraft = {
 const label = "text-[10.5px] font-bold uppercase tracking-[0.14em] text-white/35";
 const field =
   "w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40";
+
+/**
+ * Temporary diagnostic: a "test gift is not in the market" report is almost
+ * always one of two things — the app does not see the owner's email, or the
+ * row was saved as `public`/`test` the other way round. This prints both facts
+ * so the admin panel answers the question without opening devtools.
+ */
+function OwnerDiagnostics() {
+  const isOwner = useIsOwnerEmail();
+  const { user } = useAuth();
+  const email = (user?.email ?? "").trim();
+
+  const customRows = useCustomGiftRows();
+  const testCount = customRows.filter((r) => r.visibility === "test").length;
+  const publicCount = customRows.length - testCount;
+
+  return (
+    <div className="space-y-1 rounded-xl border border-white/8 bg-black/25 px-3 py-2 text-[10.5px] text-white/40">
+      <p>
+        Аккаунт: <span className="font-bold text-white/70">{email || "—"}</span>{" "}
+        <span className={isOwner ? "text-neon" : "text-mythic"}>
+          {isOwner ? "(владелец)" : "(не владелец)"}
+        </span>
+      </p>
+      <p>
+        В базе: {publicCount} «всем» · {testCount} «тест». Тестовые видит только владелец — если тут
+        «не владелец», они скрыты.
+      </p>
+    </div>
+  );
+}
 
 /** Image input: paste a link or upload a file from disk. */
 function ImageField({
@@ -205,6 +238,10 @@ export function CustomGiftEditor() {
           Не удалось загрузить общие подарки: {loadErr}. Запусти `supabase/custom-gifts.sql`.
         </p>
       )}
+
+      {/* temporary: shows what identity the app actually sees, so a "test
+          gift is missing from the market" report can be diagnosed at a glance */}
+      <OwnerDiagnostics />
 
       {/* ---------------- existing ---------------- */}
       <div className="space-y-1.5">

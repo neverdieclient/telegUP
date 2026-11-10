@@ -99,6 +99,36 @@ export async function fetchPlayer(id: string): Promise<PlayerRow | null> {
   return data as PlayerRow;
 }
 
+/** One stored inventory entry, as it is written into `profiles.inventory`. */
+export type RemoteInventoryItem = {
+  id: string;
+  giftId: string;
+  acquiredAt?: number;
+  source?: string;
+};
+
+/**
+ * Another player's inventory, for the admin panel.
+ *
+ * `profiles` is world-readable (the leaderboard needs it), so the owner can
+ * read the `inventory` jsonb column directly — no elevated function required.
+ */
+export async function fetchPlayerInventory(playerId: string): Promise<RemoteInventoryItem[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("inventory")
+    .eq("id", playerId)
+    .maybeSingle();
+  if (error || !data) return [];
+  const raw = (data as { inventory?: unknown }).inventory;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (i): i is RemoteInventoryItem =>
+      Boolean(i) && typeof (i as RemoteInventoryItem).giftId === "string",
+  );
+}
+
 /**
  * Owner-side offence on another player's row: stars, badges and the premium
  * tier. `grant_mark`/RLS only let a player write their own row, so these go

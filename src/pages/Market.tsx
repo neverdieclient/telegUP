@@ -235,7 +235,7 @@ export default function Market() {
                     disabled={!canBuy || busy === g.id}
                     onClick={() => buy(g)}
                   >
-                    {busy === g.id ? "Покупка…" : locked ? "Только владельцу" : canBuy ? "Купить" : "Мало ★"}
+                    {busy === g.id ? "Покупка…" : locked ? "Недоступно" : canBuy ? "Купить" : "Мало ★"}
                   </Button>
                 </div>
               </div>
@@ -301,7 +301,7 @@ export default function Market() {
                     {busy === detail.id
                       ? "Покупка…"
                       : lockedSlugs.has(detail.slug)
-                        ? "Только владельцу"
+                        ? "Недоступно"
                         : stars >= detail.stars
                           ? "Купить базовый"
                           : "Мало ★"}
@@ -356,7 +356,7 @@ export default function Market() {
                             disabled={!canBuy || busy === m.id}
                             onClick={() => buy(m)}
                           >
-                            {busy === m.id ? "…" : locked ? "Владельцу" : canBuy ? "Купить" : "Мало ★"}
+                            {busy === m.id ? "…" : locked ? "Недоступно" : canBuy ? "Купить" : "Мало ★"}
                           </Button>
                         </div>
                       );

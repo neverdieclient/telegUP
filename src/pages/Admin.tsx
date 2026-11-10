@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useGame, formatPhoneNumber, PHONE_FORMATS } from "../store/useGame";
 import { BADGES, BADGE_BY_ID, DISCLAIMER, GIFT_BY_ID, RARITY_META, type BadgeId } from "../data/gifts";
-import { useAllGifts } from "../lib/useCatalog";
+import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
 import { CustomGiftEditor } from "./admin/CustomGiftEditor";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
@@ -18,6 +18,7 @@ import {
   fetchBans,
   fetchLoginEvents,
   fetchPlayer,
+  fetchPlayerInventory,
   fetchTop,
   grantMark,
   ownerBan,
@@ -28,6 +29,7 @@ import {
   type BanKind,
   type BanRow,
   type LoginEventRow,
+  type RemoteInventoryItem,
   type PlayerRow,
 } from "../lib/players";
 import { getLocalSession, localSignIn, isOwnerEmail, verifyOwner } from "../lib/localAuth";
@@ -298,6 +300,125 @@ function BanPanel() {
         </Button>
       </div>
     </Panel>
+  );
+}
+
+/**
+ * Shows another player's gift inventory, so the owner can see what an account
+ * actually holds before granting or revoking anything. `profiles` is
+ * world-readable, so the jsonb inventory column comes down as-is.
+ */
+function PlayerInventory({ playerId, nickname }: { playerId: string; nickname: string }) {
+  const [items, setItems] = useState<RemoteInventoryItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const GIFT_BY_ID = useGiftIndex();
+
+  useEffect(() => {
+    if (!onlineEnabled) {
+      setItems(null);
+      return;
+    }
+    let dead = false;
+    setItems(null);
+    setError(null);
+    fetchPlayerInventory(playerId)
+      .then((list) => {
+        if (!dead) setItems(list);
+      })
+      .catch((e: unknown) => {
+        if (!dead) setError(e instanceof Error ? e.message : "Не удалось загрузить");
+      });
+    return () => {
+      dead = true;
+    };
+  }, [playerId]);
+
+  // newest first, and grouped so 40 «Plush Pepe» do not fill the panel
+  const grouped = useMemo(() => {
+    if (!items) return [];
+    const map = new Map<string, { giftId: string; count: number }>();
+    for (const i of [...items].sort((a, b) => (b.acquiredAt ?? 0) - (a.acquiredAt ?? 0))) {
+      const entry = map.get(i.giftId) ?? { giftId: i.giftId, count: 0 };
+      entry.count++;
+      map.set(i.giftId, entry);
+    }
+    return [...map.values()];
+  }, [items]);
+
+  if (!onlineEnabled) {
+    return (
+      <p className="rounded-xl border border-white/8 bg-black/25 px-3 py-2 text-[11px] text-white/30">
+        Инвентарь показывается только с подключённой онлайн-базой.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-white/35">
+          Инвентарь @{nickname}
+        </p>
+        <span className="text-[10px] tabular-nums text-white/30">
+          {items ? `${items.length} шт` : "…"}
+        </span>
+      </div>
+
+      {error && (
+        <p className="rounded-xl border border-mythic/30 bg-mythic/10 px-3 py-2 text-[11px] font-bold text-mythic">
+          {error}
+        </p>
+      )}
+      {!items && !error && <p className="text-[11px] text-white/25">Загрузка…</p>}
+      {items && !items.length && (
+        <p className="rounded-xl border border-white/8 bg-black/25 px-3 py-3 text-[11px] text-white/25">
+          Инвентарь пуст.
+        </p>
+      )}
+
+      {grouped.length > 0 && (
+        <div className="max-h-60 space-y-1 overflow-y-auto">
+          {grouped.map((g) => {
+            const gift = GIFT_BY_ID[g.giftId];
+            return (
+              <div
+                key={g.giftId}
+                className="flex items-center gap-2 rounded-xl border border-white/8 bg-black/25 px-2 py-1.5"
+              >
+                <span className="grid size-8 shrink-0 place-items-center">
+                  {gift ? (
+                    <GiftArt gift={gift} size={28} rounded="rounded-md" />
+                  ) : (
+                    <span className="grid size-7 place-items-center rounded-md border border-white/10 text-[10px] text-white/30">
+                      ?
+                    </span>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[11.5px] font-bold">
+                    {gift ? gift.name : "Неизвестный подарок"}
+                    {gift && gift.variant !== "Gift" && (
+                      <span className="font-normal text-white/40"> · {gift.variant}</span>
+                    )}
+                  </span>
+                  {!gift && (
+                    <span className="block truncate text-[10px] text-white/30">{g.giftId}</span>
+                  )}
+                </span>
+                {gift && (
+                  <span className="shrink-0 text-[10px] tabular-nums text-white/35">
+                    {gift.stars.toLocaleString("ru-RU")}★
+                  </span>
+                )}
+                <span className="shrink-0 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white/60">
+                  ×{g.count}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -998,6 +1119,13 @@ export default function Admin() {
                   </button>
                 </div>
               </>
+            )}
+
+            {/* what the selected account actually holds */}
+            {target && (
+              <div className="mt-3">
+                <PlayerInventory playerId={target.id} nickname={target.nickname} />
+              </div>
             )}
 
             {/* gift to the selected account */}
