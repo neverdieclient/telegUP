@@ -56,6 +56,7 @@ function ProfileMarks({ marks }: { marks: string[] }) {
 const QUICK_LINKS = [
   { to: "/app/cases", label: "Кейсы", desc: "Рулетка подарков", color: "text-neon" },
   { to: "/app/upgrade", label: "Апгрейд", desc: "Повысь редкость", color: "text-violet" },
+  { to: "/app/news", label: "Новости", desc: "Апдейты и фиксы", color: "text-legendary" },
   { to: "/app/market", label: "Маркет", desc: "Подарки за ★", color: "text-neon" },
   { to: "/app/minigames", label: "Мини-игры", desc: "8 игр", color: "text-legendary" },
   { to: "/app/inventory", label: "Инвентарь", desc: "", color: "text-rare" },

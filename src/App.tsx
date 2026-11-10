@@ -17,6 +17,8 @@ import { useAuth } from "./lib/players";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Cases = lazy(() => import("./pages/Cases"));
 const UpgradePage = lazy(() => import("./pages/Upgrade"));
+const News = lazy(() => import("./pages/News"));
+const Updates = lazy(() => import("./pages/Updates"));
 const Market = lazy(() => import("./pages/Market"));
 const Inventory = lazy(() => import("./pages/Inventory"));
 const MiniGames = lazy(() => import("./pages/MiniGames"));
@@ -79,6 +81,8 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="cases" element={<RequireOpen><Cases /></RequireOpen>} />
             <Route path="upgrade" element={<RequireOpen><UpgradePage /></RequireOpen>} />
+            <Route path="news" element={<RequireOpen><News /></RequireOpen>} />
+            <Route path="updates" element={<RequireOpen><Updates /></RequireOpen>} />
             <Route path="market" element={<RequireOpen><Market /></RequireOpen>} />
             <Route path="auction" element={<RequireOpen><Auction /></RequireOpen>} />
             <Route path="leaders" element={<RequireOpen><Leaders /></RequireOpen>} />

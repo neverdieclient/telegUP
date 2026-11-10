@@ -12,6 +12,8 @@ const NAV: NavItem[] = [
   { to: "/app", label: "Профиль", short: "Профиль", icon: "M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm-8 16c0-3.3 3.6-5 8-5s8 1.7 8 5v1H4Z" },
   { to: "/app/cases", label: "Кейсы", short: "Кейсы", icon: "M4 8h16v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Zm0 0V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1M12 9v4" },
   { to: "/app/upgrade", label: "Апгрейд", short: "Апгрейд", icon: "M12 3l3 6 6 1-4.5 4.4 1 6.6L12 18l-5.5 3 1-6.6L3 10l6-1Z" },
+  { to: "/app/news", label: "Новости", short: "Новости", icon: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 4h10M7 12h10M7 15h6" },
+  { to: "/app/updates", label: "Обновления", short: "Апдейты", icon: "M12 3v12m0 0 4-4m-4 4-4-4M5 20h14" },
   { to: "/app/market", label: "Маркет", short: "Маркет", icon: "M4 7h16l-1.5 12.5a2 2 0 0 1-2 1.5H7.5a2 2 0 0 1-2-1.5ZM9 7a3 3 0 1 1 6 0" },
   { to: "/app/auction", label: "Аукцион", short: "Аукцион", icon: "M12 3v3m0 12v3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M3 12h3m12 0h3M6 12a6 6 0 1 0 12 0 6 6 0 0 0-12 0Zm6-2.4L13.4 12 12 13.4" },
   { to: "/app/leaders", label: "Топ", short: "Топ", icon: "M12 3l2.7 6.1 6.6.6-5 4.5 1.4 6.5L12 17.6l-5.7 3.6L7.7 14.2l-5-4.5 6.6-.6Z" },
@@ -19,7 +21,6 @@ const NAV: NavItem[] = [
   { to: "/app/minigames", label: "Мини-игры", short: "Игры", icon: "M7 8h10a5 5 0 0 1 0 10H7A5 5 0 0 1 7 8Zm1.5 5v3M7 14.5h3M16 13.5h.01M18 16.5h.01" },
   { to: "/app/inventory", label: "Инвентарь", short: "Инвентарь", icon: "M4 7h16v13H4Zm0 0 4-4h8l4 4M9 12h6" },
   { to: "/app/craft", label: "Крафт", short: "Крафт", icon: "M12 2 4 7v10l8 5 8-5V7Zm0 0v20M4 7l8 5 8-5" },
-  { to: "/app/shop", label: "Telegram", short: "Telegram", icon: "M21 4L3 11l6 2.5M21 4l-3 16-6-4.5M9 13.5V19l3-2.5" },
   { to: "/app/profile", label: "Настройки", short: "Ещё", icon: "M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm9 4-2 1 .5 2.2-2 2-2.2-.5-1 2h-3l-1-2-2.2.5-2-2L5 12l-1.5-2.2 2-2L6 5.6l1 2h3l1-2h3" },
 ];
 

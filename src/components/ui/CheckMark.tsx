@@ -8,13 +8,14 @@
  * All inline SVG: scales crisply, no external assets.
  */
 
-export type CheckMarkKind = "basic" | "premium" | "owner" | "crown";
+export type CheckMarkKind = "basic" | "premium" | "owner" | "crown" | "major";
 
 export const MARK_TITLE: Record<CheckMarkKind, string> = {
   basic: "Проверенный аккаунт",
   premium: "Премиум",
   owner: "Владелец",
   crown: "Коллекционный ник",
+  major: "MAJOR",
 };
 
 /** Scalloped "seal" outline used by the star-shaped badges. */
@@ -165,6 +166,51 @@ function CrownMark({ size, className, title }: MarkProps) {
 
 type MarkProps = { size: number; className: string; title: string };
 
+/**
+ * «MAJOR» seal — the paid verification mark Telegram channels can buy through
+ * the Major app (2025/2026). Drawn as a violet→blue scalloped seal with the
+ * letter «M» cut out and a soft glow so it reads as premium rather than as a
+ * plain blue tick.
+ */
+function MajorMark({ size, className, title }: MarkProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      className={className}
+      role="img"
+      aria-label={title}
+      style={{ display: "inline-block", flexShrink: 0, verticalAlign: "-0.15em" }}
+    >
+      <defs>
+        <linearGradient id="cm-major" x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#a78bfa" />
+          <stop offset="0.45" stopColor="#7c5cff" />
+          <stop offset="1" stopColor="#4c8dff" />
+        </linearGradient>
+        <filter id="cm-major-glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="1.1" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <path d={SEAL} fill="url(#cm-major)" filter="url(#cm-major-glow)" />
+      {/* the «M» */}
+      <path
+        d="M7.4 16.2 V8.6 L12 12.1 L16.6 8.6 V16.2"
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function CheckMark({
   kind = "basic",
   size = 14,
@@ -184,6 +230,8 @@ export function CheckMark({
       return <OwnerMark {...props} />;
     case "crown":
       return <CrownMark {...props} />;
+    case "major":
+      return <MajorMark {...props} />;
     case "basic":
     default:
       return <BasicMark {...props} />;

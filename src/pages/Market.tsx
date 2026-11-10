@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
-import { RARITY_META, RARITY_ORDER, type Gift, type Rarity } from "../data/gifts";
+import { RARITY_META, RARITY_ORDER, SHOP_ITEMS, type Gift, type Rarity } from "../data/gifts";
 import { isPurchasable } from "../data/customGifts";
 import { modelOptions } from "../lib/rng";
 import { useAllGifts, useCustomGiftRows } from "../lib/useCatalog";
@@ -34,6 +34,104 @@ function upgradedOptions(gift: Gift): Gift[] {
   return models
     .filter((m) => m.stars >= gift.stars)
     .sort((a, b) => a.stars - b.stars);
+}
+
+/**
+ * Telegram Premium — moved here from the retired «Апгрейд» tab.
+ *
+ * A single card: buy once, get the star by the avatar, the Premium badge and
+ * the case discount. Buying is the same store action the shop used.
+ */
+function PremiumSection() {
+  const stars = useGame((s) => s.stars);
+  const profile = useGame((s) => s.profile);
+  const shopItems = useGame((s) => s.shopItems);
+  const buyShopItem = useGame((s) => s.buyShopItem);
+  const toast = useGame((s) => s.toast);
+  const [ask, setAsk] = useState(false);
+
+  const item = SHOP_ITEMS.find((s) => s.kind === "premium");
+  if (!item) return null;
+
+  const owned = shopItems.includes(item.id) || profile.tier === "Premium";
+  const canBuy = !owned && stars >= item.price;
+
+  const confirm = () => {
+    if (buyShopItem(item.id, item.price)) {
+      toast({ kind: "success", title: "Telegram Premium", message: "Активировано" });
+    } else {
+      toast({ kind: "error", title: "Не удалось купить" });
+    }
+    setAsk(false);
+  };
+
+  return (
+    <section className="relative overflow-hidden rounded-3xl border border-[#ffcc33]/25 bg-gradient-to-br from-[#ffcc33]/[0.10] via-white/[0.02] to-transparent p-4">
+      <div className="pointer-events-none absolute -right-12 -top-16 size-40 rounded-full bg-[#ffcc33]/20 blur-[60px]" />
+      <div className="relative flex items-center gap-3.5">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#ffdf7a] to-[#ffb800] text-[20px] shadow-[0_14px_36px_-16px_rgba(255,204,51,0.95)]">
+          ⭐
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-[14.5px] font-extrabold tracking-tight">
+            {item.name}
+            {owned && (
+              <span className="rounded-md bg-neon/15 px-1.5 py-0.5 text-[9px] font-bold text-neon">
+                Куплено
+              </span>
+            )}
+          </p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-white/35">{item.desc}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="mb-1.5 text-[12px] font-extrabold tabular-nums text-[#ffcc33]/90">
+            {item.price.toLocaleString("ru-RU")} ★
+          </p>
+          <Button
+            size="sm"
+            variant={owned ? "outline" : canBuy ? "primary" : "ghost"}
+            disabled={owned || !canBuy}
+            onClick={() => setAsk(true)}
+          >
+            {owned ? "Есть" : canBuy ? "Купить" : "Мало ★"}
+          </Button>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {ask && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setAsk(false)}
+            className="fixed inset-0 z-[95] grid place-items-center bg-black/80 p-5 backdrop-blur"
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-xs rounded-3xl border border-white/10 bg-[#0f0f13] p-5 text-center"
+            >
+              <p className="text-[15px] font-extrabold">Купить «{item.name}»?</p>
+              <p className="mt-1 text-[12px] text-white/35">
+                Спишется {item.price.toLocaleString("ru-RU")} ★. Это симуляция.
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Button variant="ghost" onClick={() => setAsk(false)}>
+                  Отмена
+                </Button>
+                <Button variant="primary" onClick={confirm}>
+                  Подтвердить
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
 }
 
 export default function Market() {
@@ -244,6 +342,8 @@ export default function Market() {
         Цены в TON взяты из реального Fragment-подобного маркета и приведены для атмосферы. Покупка идёт за
         локальные звёзды и не создаёт никаких обязательств.
       </p>
+
+      <PremiumSection />
 
       {/* gift detail: the same gift, but with its nicer (more expensive) models */}
       <AnimatePresence>
