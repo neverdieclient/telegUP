@@ -1,15 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  deleteCustomGift,
-  saveCustomGift,
-  slugFor,
-  uploadCustomImage,
-  type CustomGiftDraft,
-  type CustomModel,
-  type CustomVisibility,
-} from "../../data/customGifts";
-import { customGiftsError, customGiftsLoaded } from "../../data/customGifts";
-import { useCustomGiftRows } from "../../lib/useCatalog";
+import { deleteCustomGift, saveCustomGift, slugFor, uploadCustomImage } from "../../data/customGifts";
+import type { CustomGiftDraft, CustomModel, CustomVisibility } from "../../data/customGifts";
+import { useCustomGiftRows, useCustomGiftStatus } from "../../lib/useCatalog";
 import { useGame } from "../../store/useGame";
 import { GiftArt } from "../../components/gifts/GiftArt";
 import { Button } from "../../components/ui/Button";
@@ -95,8 +87,7 @@ function ImageField({
  */
 export function CustomGiftEditor() {
   const rows = useCustomGiftRows();
-  const loaded = customGiftsLoaded();
-  const loadErr = customGiftsError();
+  const { loaded, error: loadErr } = useCustomGiftStatus();
   const toast = useGame((s) => s.toast);
 
   const [draft, setDraft] = useState<CustomGiftDraft>(EMPTY);

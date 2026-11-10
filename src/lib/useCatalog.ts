@@ -1,6 +1,8 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { GIFTS, GIFT_BY_ID, type Gift, type Rarity } from "../data/gifts";
 import {
+  customGiftsError,
+  customGiftsLoaded,
   customGiftsToGifts,
   getCustomGiftRows,
   getGiftIndexVersion,
@@ -41,6 +43,12 @@ export function useGift(id: string | null | undefined): Gift | undefined {
 /** Owner rows for the admin panel (includes test gifts). */
 export function useCustomGiftRows(): CustomGiftRow[] {
   return useSyncExternalStore(subscribeCustomGifts, getCustomGiftRows, getCustomGiftRows);
+}
+
+/** Load state for the admin panel — reactive, unlike the raw getters. */
+export function useCustomGiftStatus(): { loaded: boolean; error: string | null } {
+  useSyncExternalStore(subscribeCustomGifts, getCustomGiftRows, getCustomGiftRows);
+  return { loaded: customGiftsLoaded(), error: customGiftsError() };
 }
 
 /**
