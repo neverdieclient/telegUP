@@ -12,6 +12,7 @@ import {
 } from "../data/gifts";
 import { pick, randInt, uid } from "../lib/rng";
 import { getGiftIndex } from "../data/customGifts";
+import { boostState } from "../lib/starBoost";
 import { onBanSignal } from "../lib/banSignal";
 import { DEFAULT_THEME, type ThemeId } from "../lib/theme";
 import { rollUsername, USERNAME_BOX_PRICE } from "../lib/usernameBox";
@@ -29,6 +30,14 @@ const giftOf = (id: string | null | undefined) =>
 
 /** Built-ins plus everything currently published in `custom_gifts`. */
 const allGifts = (): Gift[] => [...GIFTS, ...Object.values(getGiftIndex())];
+
+/**
+ * Everything a player EARNs is scaled by the owner's payout multiplier and, on
+ * top of that, by a running «двойные звёзды» event. One helper so a sale, a
+ * case drop and the daily fortune can never disagree about the boost.
+ */
+const earnFactor = (admin: { payoutMultiplier: number }) =>
+  (admin.payoutMultiplier / 100) * boostState().multiplier;
 
 export type InventoryItem = {
   /** instance id */
@@ -456,7 +465,7 @@ export const useGame = create<State>()(
     (set, get) => ({
       ...initialState,
 
-      addStars: (n) => set((s) => ({ stars: s.stars + Math.round(n * (s.admin.payoutMultiplier / 100)) })),
+      addStars: (n) => set((s) => ({ stars: s.stars + Math.round(n * earnFactor(s.admin)) })),
       spendStars: (n) => {
         if (n < 0) return false;
         if (get().stars < n) return false;
@@ -493,7 +502,7 @@ export const useGame = create<State>()(
           }
         }
         const base = FORTUNE_PRIZES[idx];
-        const prize = Math.max(1, Math.round(base * (s.admin.payoutMultiplier / 100)));
+        const prize = Math.max(1, Math.round(base * earnFactor(s.admin)));
         set({ lastFortuneAt: Date.now(), stars: s.stars + prize });
         return prize;
       },
@@ -521,7 +530,7 @@ export const useGame = create<State>()(
         if (!item) return 0;
         const gift = giftOf(item.giftId);
         if (!gift) return 0;
-        const gain = Math.round(gift.stars * (get().admin.payoutMultiplier / 100));
+        const gain = Math.round(gift.stars * earnFactor(get().admin));
         set((s) => ({
           inventory: s.inventory.filter((i) => i.id !== instanceId),
           stars: s.stars + gain,
@@ -532,6 +541,7 @@ export const useGame = create<State>()(
 
       sellAll: (filter) => {
         const { inventory, admin } = get();
+        const factor = earnFactor(admin);
         const kept: InventoryItem[] = [];
         let count = 0;
         let stars = 0;
@@ -543,7 +553,7 @@ export const useGame = create<State>()(
             continue;
           }
           count++;
-          stars += Math.round(gift.stars * (admin.payoutMultiplier / 100));
+          stars += Math.round(gift.stars * factor);
         }
         if (!count) return { count: 0, stars: 0 };
         set((s) => ({
@@ -703,7 +713,7 @@ export const useGame = create<State>()(
         if (!profile.purchasedUsernames.includes(username)) return false;
         // can't sell the name you are currently using
         if (profile.nickname === username) return false;
-        const gain = Math.max(1, Math.round(price * (get().admin.payoutMultiplier / 100)));
+        const gain = Math.max(1, Math.round(price * earnFactor(get().admin)));
         set((s) => ({
           stars: s.stars + gain,
           profile: {
