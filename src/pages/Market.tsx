@@ -1,12 +1,10 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { RARITY_META, RARITY_ORDER, SHOP_ITEMS, type Gift, type Rarity } from "../data/gifts";
 import { isPurchasable } from "../data/customGifts";
-import { builtInArt, formatLeft, loadDrops, type LiveDrop } from "../data/drops";
 import { modelOptions } from "../lib/rng";
-import { useAllGifts, useCustomGiftRows, useGiftIndex } from "../lib/useCatalog";
+import { useAllGifts, useCustomGiftRows } from "../lib/useCatalog";
 import { useIsOwnerEmail } from "../lib/useIsOwnerEmail";
-import { useLiveDrops } from "../data/drops";
 import { useBoost } from "../lib/starBoost";
 import { useGame } from "../store/useGame";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
@@ -37,106 +35,6 @@ function upgradedOptions(gift: Gift): Gift[] {
   return models
     .filter((m) => m.stars >= gift.stars)
     .sort((a, b) => a.stars - b.stars);
-}
-
-/**
- * The live limited drop — a gift the owner picked and framed as «Лимитед».
- * While the countdown runs it can be bought; once it ends the shelf turns
- * grey and says the drop is over, but the gift itself stays in the catalogue.
- */
-function LiveDropShelf({ drop, onBuy }: { drop: LiveDrop; onBuy: (gift: Gift) => void }) {
-  const gift = drop.gift;
-  const art = gift?.image ?? builtInArt(drop.slug);
-  const ended = drop.phase === "ended";
-  const scheduled = drop.phase === "scheduled";
-
-  return (
-    <motion.section
-      layout
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      transition={{ type: "spring", stiffness: 220, damping: 26 }}
-      className={`relative overflow-hidden rounded-3xl border p-4 ${
-        ended
-          ? "border-white/8 bg-white/[0.015]"
-          : "border-[#ff5c8a]/30 bg-gradient-to-br from-[#ff5c8a]/[0.12] via-white/[0.02] to-transparent"
-      }`}
-    >
-      {!ended && (
-        <motion.div
-          className="pointer-events-none absolute -right-14 -top-16 size-44 rounded-full bg-[#ff5c8a]/25 blur-[64px]"
-          animate={{ scale: [1, 1.18, 1], opacity: [0.55, 0.85, 0.55] }}
-          transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
-        />
-      )}
-
-      <div className="relative flex items-center gap-3.5">
-        <div className="relative grid size-16 shrink-0 place-items-center rounded-2xl bg-black/35">
-          {art ? (
-            <img src={art} alt="" className={`size-14 object-contain ${ended ? "opacity-40 grayscale" : ""}`} />
-          ) : (
-            <span className="text-[26px]">{ended ? "🔒" : "🎁"}</span>
-          )}
-          {!ended && (
-            <motion.span
-              className="absolute -right-1 -top-1 rounded-md bg-[#ff5c8a] px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-white shadow-lg"
-              animate={{ y: [0, -2, 0] }}
-              transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-            >
-              limited
-            </motion.span>
-          )}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <p className="text-[9.5px] font-black uppercase tracking-[0.18em] text-[#ff5c8a]/80">
-            Лимитед-дроп
-          </p>
-          <p className="truncate text-[15px] font-extrabold tracking-tight">
-            {gift?.name ?? drop.label ?? drop.slug}
-          </p>
-          <p className="mt-0.5 text-[11px] text-white/40">
-            {ended
-              ? "Дроп завершён — подарок больше не продаётся"
-              : scheduled
-                ? "Скоро начнётся"
-                : drop.ends_at
-                  ? `Осталось ${formatLeft(drop.msLeft)}`
-                  : null}
-          </p>
-        </div>
-
-        <div className="shrink-0 text-right">
-          {!ended && gift && (
-            <p className="mb-1.5 flex items-center justify-end gap-0.5 text-[13px] font-extrabold tabular-nums text-neon">
-              {gift.stars.toLocaleString("ru-RU")}
-              <StarIcon className="size-3" />
-            </p>
-          )}
-          <Button
-            size="sm"
-            variant={ended ? "outline" : "primary"}
-            disabled={ended || !gift}
-            onClick={() => gift && onBuy(gift)}
-          >
-            {ended ? "Завершён" : "Купить"}
-          </Button>
-        </div>
-      </div>
-
-      {!ended && (
-        <div className="relative mt-3 h-1 overflow-hidden rounded-full bg-black/40">
-          <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-[#ff5c8a] to-[#ffb199]"
-            initial={{ width: "100%" }}
-            animate={{ width: drop.ends_at ? `${Math.max(0, Math.min(100, (drop.msLeft / (24 * 3600_000)) * 100))}%` : "100%" }}
-            transition={{ duration: 0.4 }}
-          />
-        </div>
-      )}
-    </motion.section>
-  );
 }
 
 /**
@@ -256,27 +154,7 @@ export default function Market() {
     return set;
   }, [customRows, owner]);
 
-  const giftIndex = useGiftIndex();
-  const drops = useLiveDrops(giftIndex);
   const boost = useBoost();
-
-  useEffect(() => {
-    void loadDrops();
-  }, []);
-
-  /** The drop currently on air (Live), or the most recent one if none is. */
-  const activeDrop = useMemo(() => {
-    const live = drops.find((d) => d.phase === "live");
-    if (live) return live;
-    return drops.find((d) => d.phase === "scheduled") ?? drops[0] ?? null;
-  }, [drops]);
-
-  /** slug → ended drop: those gifts stay listed but cannot be bought again. */
-  const endedSlugs = useMemo(() => {
-    const set = new Set<string>();
-    for (const d of drops) if (d.phase === "ended") set.add(d.slug);
-    return set;
-  }, [drops]);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<"price" | "priceDesc" | "name">("price");
@@ -303,10 +181,6 @@ export default function Market() {
   const buy = (gift: Gift) => {
     if (lockedSlugs.has(gift.slug)) {
       toast({ kind: "error", title: "Недоступно", message: "Этот подарок может купить только владелец" });
-      return;
-    }
-    if (endedSlugs.has(gift.slug)) {
-      toast({ kind: "error", title: "Лимитед-дроп завершён", message: "Этот подарок больше не продаётся" });
       return;
     }
     if (stars < gift.stars) {
@@ -380,10 +254,6 @@ export default function Market() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {activeDrop && <LiveDropShelf key={activeDrop.id} drop={activeDrop} onBuy={buy} />}
-      </AnimatePresence>
-
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
         {TABS.map((t) => (
           <button
@@ -443,9 +313,7 @@ export default function Market() {
         {list.slice(0, 300).map((g, i) => {
           const meta = RARITY_META[g.rarity];
             const locked = lockedSlugs.has(g.slug);
-            const dropEnded = endedSlugs.has(g.slug);
-            const dropLive = activeDrop?.phase === "live" && activeDrop.slug === g.slug;
-            const canBuy = !locked && !dropEnded && stars >= g.stars;
+            const canBuy = !locked && stars >= g.stars;
           return (
             <motion.article
               key={g.id}
@@ -469,15 +337,6 @@ export default function Market() {
                 <span className={`absolute left-2 top-2 rounded-md border px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wider ${meta.chip}`}>
                   {meta.label}
                 </span>
-                {(dropLive || dropEnded) && (
-                  <span
-                    className={`absolute bottom-2 left-2 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[8.5px] font-black uppercase tracking-wider ${
-                      dropEnded ? "bg-black/70 text-white/40" : "bg-[#ff5c8a] text-white shadow-lg"
-                    }`}
-                  >
-                    {dropEnded ? "🔒 дроп закрыт" : "limited"}
-                  </span>
-                )}
                 {g.ton > 0 && (
                   <span className="absolute right-2 top-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[8.5px] font-bold tabular-nums text-white/55 backdrop-blur">
                     {g.ton.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} TON
@@ -505,7 +364,7 @@ export default function Market() {
                     disabled={!canBuy || busy === g.id}
                     onClick={() => buy(g)}
                   >
-                    {busy === g.id ? "Покупка…" : locked ? "Недоступно" : dropEnded ? "Дроп закрыт" : canBuy ? "Купить" : "Мало ★"}
+                    {busy === g.id ? "Покупка…" : locked ? "Недоступно" : canBuy ? "Купить" : "Мало ★"}
                   </Button>
                 </div>
               </div>
@@ -566,24 +425,17 @@ export default function Market() {
                   <Button
                     size="sm"
                     className="mt-2"
-                    variant={!lockedSlugs.has(detail.slug) && !endedSlugs.has(detail.slug) && stars >= detail.stars ? "primary" : "ghost"}
-                    disabled={
-                      lockedSlugs.has(detail.slug) ||
-                      endedSlugs.has(detail.slug) ||
-                      stars < detail.stars ||
-                      busy === detail.id
-                    }
+                    variant={!lockedSlugs.has(detail.slug) && stars >= detail.stars ? "primary" : "ghost"}
+                    disabled={lockedSlugs.has(detail.slug) || stars < detail.stars || busy === detail.id}
                     onClick={() => buy(detail)}
                   >
                     {busy === detail.id
                       ? "Покупка…"
                       : lockedSlugs.has(detail.slug)
                         ? "Недоступно"
-                        : endedSlugs.has(detail.slug)
-                          ? "Дроп закрыт"
-                          : stars >= detail.stars
-                            ? "Купить базовый"
-                            : "Мало ★"}
+                        : stars >= detail.stars
+                          ? "Купить базовый"
+                          : "Мало ★"}
                   </Button>
                 </div>
                 <button

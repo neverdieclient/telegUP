@@ -4,7 +4,7 @@ import { useGame, formatPhoneNumber, PHONE_FORMATS } from "../store/useGame";
 import { BADGES, BADGE_BY_ID, DISCLAIMER, GIFT_BY_ID, RARITY_META, type BadgeId } from "../data/gifts";
 import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
 import { CustomGiftEditor } from "./admin/CustomGiftEditor";
-import { DropPanel, BoostPanel } from "./admin/DropPanels";
+import { BoostPanel } from "./admin/BoostPanel";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
 import { Button } from "../components/ui/Button";
@@ -1219,16 +1219,13 @@ export default function Admin() {
           <CustomGiftEditor />
         </Panel>
 
-        {/* ---------------- limited drop + star boost ---------------- */}
+        {/* ---------------- star boost ---------------- */}
         <Panel
-          title="Ивенты"
-          desc="Лимитед-дроп подарка и «двойные звёзды». Включаются и выключаются в любой момент."
-          badge="event"
+          title="Двойные звёзды"
+          desc="Включай и выключай бонус в любой момент: множитель на всё, что игроки зарабатывают."
+          badge="boost"
         >
-          <div className="space-y-3">
-            <DropPanel />
-            <BoostPanel />
-          </div>
+          <BoostPanel />
         </Panel>
 
         {/* ---------------- maintenance (self only) ---------------- */}

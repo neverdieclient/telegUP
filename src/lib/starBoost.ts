@@ -158,9 +158,6 @@ export function initStarEventRealtime(): () => void {
     .on("postgres_changes", { event: "*", schema: "public", table: "star_events" }, () => {
       void loadStarEvent(true);
     })
-    .on("postgres_changes", { event: "*", schema: "public", table: "live_drops" }, () => {
-      // the market listens to drops separately; nothing to do here
-    })
     .subscribe();
   return () => {
     void client.removeChannel(channel);
