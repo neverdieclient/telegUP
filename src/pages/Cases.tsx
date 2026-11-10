@@ -151,6 +151,9 @@ export default function Cases() {
   const [activeCase, setActiveCase] = useState<Case | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
   const offsetRef = useRef(0);
+  // the reel mounts above the grid, so a spin scrolls it into view — otherwise
+  // the player has to scroll up themselves to watch the roll
+  const reelAnchorRef = useRef<HTMLDivElement | null>(null);
   const freeMs = useCountdown(freeCaseReadyAt);
   const freeReady = freeMs === 0;
 
@@ -185,6 +188,15 @@ export default function Cases() {
       setStrip(newStrip);
       setSpinning(true);
       offsetRef.current = -(WINNER_INDEX * STEP + ITEM_W / 2);
+
+      // the reel block is inserted above the case grid: bring it to the top of
+      // the screen right away so the roll is visible without scrolling by hand
+      window.requestAnimationFrame(() => {
+        const el = reelAnchorRef.current;
+        if (!el) return;
+        const top = el.getBoundingClientRect().top + window.scrollY - 12;
+        window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      });
 
       window.setTimeout(() => {
         addItem(winner.id, free ? "free" : "case");
@@ -243,9 +255,19 @@ export default function Cases() {
         </div>
       </div>
 
+      {/* anchor for the auto-scroll when a spin starts — it must exist before
+          the reel section mounts, otherwise the target position shifts while
+          the section is still animating its height */}
+      <div ref={reelAnchorRef} aria-hidden className="h-0 scroll-mt-4" />
+
       <AnimatePresence>
         {strip && (
-          <motion.section initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+          <motion.section
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
             <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0c0c0f]">
               <div className="flex items-center justify-between border-b border-white/6 px-4 py-2.5">
                 <p className="text-[11.5px] font-bold uppercase tracking-[0.14em] text-white/40">{activeCase?.name} кейс</p>
