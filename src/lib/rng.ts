@@ -149,7 +149,7 @@ export function chance(p: number): boolean {
 
 /* ==================================================== model upgrade (skin) */
 
-/** Same collectible, nicer model: all variants of one gift. */
+/** Same collectible, nicer models: every model variant of one gift. */
 export function modelOptions(gift: Gift): Gift[] {
   return GIFTS.filter((g) => g.slug === gift.slug && g.kind === "model");
 }
@@ -161,18 +161,35 @@ export const MODEL_HOUSE_EDGE = 1.0;
  * Chance to morph `from` into `to`. Both items belong to the same gift,
  * so the only thing that changes is the model value ratio.
  * The multiplier equals the value ratio, so the fair roll chance is 1/mult.
+ * Equal-value (sideways) swaps fall back to a high-but-not-certain chance.
  */
 export function modelUpgradeChance(from: Gift, to: Gift): number {
-  if (!(to.stars > from.stars)) return 0;
-  const mult = to.stars / Math.max(1, from.stars);
-  return Math.min(95, Math.max(0.4, (100 / mult) * MODEL_HOUSE_EDGE));
+  if (to.stars >= from.stars) {
+    const mult = to.stars / Math.max(1, from.stars);
+    return Math.min(95, Math.max(0.4, (100 / mult) * MODEL_HOUSE_EDGE));
+  }
+  // a sideways/downward target (only allowed as a last resort) is easy
+  return 80;
 }
 
-/** Target models reachable from `from`, grouped from cheap to expensive. */
+/**
+ * Target models reachable from `from`, grouped from cheap to expensive.
+ *
+ * Every model of the collectible that is worth at least as much as the source
+ * counts as an upgrade — this includes equal-value models, so a model sitting
+ * at the top of a value tie still has real targets instead of an empty list.
+ * When the source is already the most valuable model, its slightly cheaper
+ * siblings are offered as a last-resort "rename" so the picker is never empty.
+ */
 export function modelTargets(from: Gift): Gift[] {
-  return modelOptions(from)
-    .filter((g) => g.stars > from.stars && g.id !== from.id)
+  const options = modelOptions(from).filter((g) => g.id !== from.id);
+  if (!options.length) return [];
+  const higher = options
+    .filter((g) => g.stars >= from.stars)
     .sort((a, b) => a.stars - b.stars);
+  if (higher.length) return higher;
+  // source is the priciest model → offer the closest cheaper ones
+  return [...options].sort((a, b) => b.stars - a.stars).slice(0, 6);
 }
 
 /**
@@ -181,9 +198,9 @@ export function modelTargets(from: Gift): Gift[] {
  * the displayed chance ladder instead of sneaking in a house edge.
  */
 export function rollModelUpgrade(from: Gift, maxStars = Infinity): Gift | null {
-  const pool = modelOptions(from).filter((g) => g.stars > from.stars && g.stars <= maxStars);
-  if (!pool.length) return null;
-  const weighted = pool.map((g) => {
+  const targets = modelTargets(from).filter((g) => g.stars <= maxStars);
+  if (!targets.length) return null;
+  const weighted = targets.map((g) => {
     const ratio = g.stars / Math.max(1, from.stars);
     return { ...g, weight: 1 / Math.pow(ratio, 1.6) };
   });

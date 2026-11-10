@@ -1,6 +1,7 @@
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
-import { GIFTS, RARITY_META, RARITY_ORDER, type Rarity } from "../data/gifts";
+import { GIFTS, RARITY_META, RARITY_ORDER, type Gift, type Rarity } from "../data/gifts";
+import { modelOptions } from "../lib/rng";
 import { useGame } from "../store/useGame";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
@@ -19,6 +20,19 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
+/**
+ * Nicer, more expensive versions of a gift — every real model of the same
+ * collectible that is worth at least as much as the base item. A plain gift
+ * opens the full model list of its collection, so clicking any gift always
+ * shows something better to buy.
+ */
+function upgradedOptions(gift: Gift): Gift[] {
+  const models = modelOptions(gift).filter((m) => m.id !== gift.id);
+  return models
+    .filter((m) => m.stars >= gift.stars)
+    .sort((a, b) => a.stars - b.stars);
+}
+
 export default function Market() {
   const stars = useGame((s) => s.stars);
   const spendStars = useGame((s) => s.spendStars);
@@ -31,6 +45,7 @@ export default function Market() {
   const [busy, setBusy] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("gift");
   const [collection, setCollection] = useState<string>("all");
+  const [detail, setDetail] = useState<Gift | null>(null);
 
   const list = useMemo(() => {
     let out = GIFTS.filter((g) => g.kind === tab);
@@ -47,14 +62,12 @@ export default function Market() {
     return [...slugs].sort();
   }, [tab]);
 
-  const buy = (id: string) => {
-    const gift = GIFTS.find((g) => g.id === id);
-    if (!gift) return;
+  const buy = (gift: Gift) => {
     if (stars < gift.stars) {
       toast({ kind: "error", title: "Мало звёзд", message: `Нужно ${gift.stars.toLocaleString("ru-RU")} ★` });
       return;
     }
-    setBusy(id);
+    setBusy(gift.id);
     window.setTimeout(() => {
       if (spendStars(gift.stars)) {
         addItem(gift.id, "market");
@@ -64,6 +77,8 @@ export default function Market() {
       setBusy(null);
     }, 320);
   };
+
+  const detailModels = useMemo(() => (detail ? upgradedOptions(detail) : []), [detail]);
 
   return (
     <div className="space-y-4">
@@ -148,8 +163,9 @@ export default function Market() {
               transition={{ delay: Math.min(i * 0.012, 0.25), duration: 0.3 }}
               className={`group relative flex flex-col overflow-hidden rounded-3xl border bg-white/[0.025] transition-transform duration-300 hover:-translate-y-1 ${meta.ring}`}
             >
-              <div
-                className="relative grid h-[112px] place-items-center overflow-hidden"
+              <button
+                onClick={() => setDetail(g)}
+                className="relative grid h-[112px] place-items-center overflow-hidden text-left"
                 style={{ background: `radial-gradient(120% 105% at 50% 5%, ${g.tint}2e, #0e0e12 72%)` }}
               >
                 <motion.div
@@ -167,7 +183,7 @@ export default function Market() {
                     {g.ton.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} TON
                   </span>
                 )}
-              </div>
+              </button>
 
               <div className="flex flex-1 flex-col p-2.5">
                 <h3 className="truncate text-[12px] font-extrabold tracking-tight">{g.name}</h3>
@@ -181,16 +197,26 @@ export default function Market() {
                   </span>
                 </div>
 
-                <Button
-                  full
-                  size="sm"
-                  className="mt-2"
-                  variant={canBuy ? "primary" : "ghost"}
-                  disabled={!canBuy || busy === g.id}
-                  onClick={() => buy(g.id)}
-                >
-                  {busy === g.id ? "Покупка…" : canBuy ? "Купить" : "Мало ★"}
-                </Button>
+                <div className="mt-2 flex gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="shrink-0"
+                    onClick={() => setDetail(g)}
+                    title="Показать улучшенные модели"
+                  >
+                    ✨
+                  </Button>
+                  <Button
+                    full
+                    size="sm"
+                    variant={canBuy ? "primary" : "ghost"}
+                    disabled={!canBuy || busy === g.id}
+                    onClick={() => buy(g)}
+                  >
+                    {busy === g.id ? "Покупка…" : canBuy ? "Купить" : "Мало ★"}
+                  </Button>
+                </div>
               </div>
             </motion.article>
           );
@@ -207,6 +233,113 @@ export default function Market() {
         Цены в TON взяты из реального Fragment-подобного маркета и приведены для атмосферы. Покупка идёт за
         локальные звёзды и не создаёт никаких обязательств.
       </p>
+
+      {/* gift detail: the same gift, but with its nicer (more expensive) models */}
+      <AnimatePresence>
+        {detail && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setDetail(null)}
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0, scale: 0.98 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 40, opacity: 0, scale: 0.98 }}
+              transition={{ type: "spring", stiffness: 320, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0f0f13] p-4 sm:rounded-3xl sm:p-5"
+            >
+              <div className="flex items-start gap-4">
+                <div
+                  className="grid shrink-0 place-items-center rounded-2xl border border-white/8 p-3"
+                  style={{ background: `radial-gradient(120% 105% at 50% 5%, ${detail.tint}33, #0e0e12 72%)` }}
+                >
+                  <GiftArt gift={detail} size={92} rounded="rounded-2xl" motion="idle" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="truncate font-display text-xl font-black tracking-tight">{detail.name}</h2>
+                    <span className={`rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${RARITY_META[detail.rarity].chip}`}>
+                      {RARITY_META[detail.rarity].label}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[11.5px] text-white/40">{detail.variant === "Gift" ? "Коллекционный подарок" : detail.variant}</p>
+                  <p className="mt-2 flex items-center gap-1 text-[18px] font-black tabular-nums text-neon">
+                    {detail.stars.toLocaleString("ru-RU")} <StarIcon className="size-3.5" />
+                  </p>
+                  <Button
+                    size="sm"
+                    className="mt-2"
+                    variant={stars >= detail.stars ? "primary" : "ghost"}
+                    disabled={stars < detail.stars || busy === detail.id}
+                    onClick={() => buy(detail)}
+                  >
+                    {busy === detail.id ? "Покупка…" : stars >= detail.stars ? "Купить базовый" : "Мало ★"}
+                  </Button>
+                </div>
+                <button
+                  onClick={() => setDetail(null)}
+                  className="shrink-0 rounded-xl border border-white/10 px-2.5 py-1 text-[12px] font-bold text-white/40 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-2 flex items-center gap-2">
+                  <h3 className="text-[13px] font-extrabold tracking-tight">Улучшенные модели</h3>
+                  <span className="rounded-md border border-violet/30 bg-violet/10 px-1.5 py-0.5 text-[9.5px] font-bold text-violet">
+                    {detailModels.length}
+                  </span>
+                </div>
+                {detailModels.length === 0 ? (
+                  <p className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-center text-[11.5px] text-white/30">
+                    Для этого подарка нет более дорогих моделей — это его топ-версия.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {detailModels.map((m) => {
+                      const canBuy = stars >= m.stars;
+                      const meta = RARITY_META[m.rarity];
+                      return (
+                        <div
+                          key={m.id}
+                          className={`flex flex-col items-center rounded-2xl border bg-black/25 p-2 ${meta.ring}`}
+                        >
+                          <div
+                            className="grid w-full place-items-center rounded-xl"
+                            style={{ background: `radial-gradient(120% 100% at 50% 5%, ${m.tint}2a, transparent 72%)` }}
+                          >
+                            <GiftArt gift={m} size={54} rounded="rounded-lg" />
+                          </div>
+                          <p className="mt-1.5 w-full truncate text-center text-[9.5px] font-bold text-white/70">{m.variant}</p>
+                          <p className="flex items-center gap-0.5 text-[10.5px] font-extrabold tabular-nums text-neon/90">
+                            {m.stars.toLocaleString("ru-RU")}
+                            <StarIcon className="size-2.5" />
+                          </p>
+                          <Button
+                            full
+                            size="sm"
+                            className="mt-1.5"
+                            variant={canBuy ? "violet" : "ghost"}
+                            disabled={!canBuy || busy === m.id}
+                            onClick={() => buy(m)}
+                          >
+                            {busy === m.id ? "…" : canBuy ? "Купить" : "Мало ★"}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -66,13 +66,10 @@ export type Gift = {
 };
 
 export type CaseCategory =
-  | "bronze"
-  | "silver"
-  | "gold"
-  | "legendary"
-  | "collection"
+  | "price"
   | "event"
-  | "premium";
+  | "premium"
+  | "free";
 
 export type Case = {
   id: string;
@@ -88,6 +85,10 @@ export type Case = {
   covers: string[];
   /** ids of the gifts this case can drop */
   pool: string[];
+  /** cheapest gift the pool can drop, in stars (used for the price ladder hint) */
+  fromStars?: number;
+  /** most expensive gift the pool can drop, in stars */
+  toStars?: number;
 };
 
 /* =============================================================== helpers */
@@ -313,55 +314,146 @@ export const RARITY_META: Record<
 
 /* ================================================================= cases */
 
-const CASE_TIERS: {
-  category: CaseCategory;
+/**
+ * Ten price-tier cases. Every case draws from the whole catalogue and only
+ * shifts the odds toward its price band: a cheap case mostly drops cheap
+ * gifts, an expensive case mostly drops expensive ones. The bands are defined
+ * by the gifts' star value, so "дешёвый" really means "gifts under N stars".
+ */
+const PRICE_CASES: {
+  id: string;
   name: string;
   tag: string;
   desc: string;
   accent: string;
   glow: string;
-  odds: Record<Rarity, number>;
-  priceMul: number;
+  /** star range of the gifts this case favours */
+  min: number;
+  max: number;
+  /** how sharply the odds skew toward the band (1 = flat, higher = sharper) */
+  bias: number;
+  /** fraction of the expected roll value that becomes the case price */
+  priceRate: number;
 }[] = [
   {
-    category: "bronze",
-    name: "Бронзовый",
-    tag: "Старт",
-    desc: "Первый кейс. Обычные и редкие подарки.",
-    accent: "#c98a4b",
-    glow: "rgba(201,138,75,0.45)",
-    odds: { common: 0.6, rare: 0.28, epic: 0.09, legendary: 0.026, mythic: 0.004 },
-    priceMul: 1,
+    id: "price-starter",
+    name: "Стартовый кейс",
+    tag: "от 200 ★",
+    desc: "Все подарки маркета, но чаще всего дешёвые.",
+    accent: "#9aa3ad",
+    glow: "rgba(154,163,173,0.45)",
+    min: 0,
+    max: 2_000,
+    bias: 2.2,
+    priceRate: 0.7,
   },
   {
-    category: "silver",
-    name: "Серебряный",
-    tag: "Популярный",
-    desc: "Больше редких и эпических моделей.",
-    accent: "#b9c4d0",
-    glow: "rgba(185,196,208,0.45)",
-    odds: { common: 0.42, rare: 0.34, epic: 0.18, legendary: 0.052, mythic: 0.008 },
-    priceMul: 4,
+    id: "price-cheap",
+    name: "Дешёвый кейс",
+    tag: "дешёвые",
+    desc: "Подарки до пары тысяч звёзд — вход в игру.",
+    accent: "#8bd4a0",
+    glow: "rgba(139,212,160,0.45)",
+    min: 0,
+    max: 1_000,
+    bias: 3,
+    priceRate: 0.72,
   },
   {
-    category: "gold",
-    name: "Золотой",
-    tag: "Выгодный",
-    desc: "Легендарные модели попадаются в разы чаще.",
+    id: "price-cheap-plus",
+    name: "Доступный кейс",
+    tag: "дешёвые+",
+    desc: "Немного выше дешёвого: изредка падают редкие вещи.",
+    accent: "#7fd1c0",
+    glow: "rgba(127,209,192,0.45)",
+    min: 200,
+    max: 3_000,
+    bias: 2.6,
+    priceRate: 0.7,
+  },
+  {
+    id: "price-mid",
+    name: "Средний кейс",
+    tag: "средние",
+    desc: "Середина рынка: от нескольких сотен до тысяч звёзд.",
+    accent: "#3b9dff",
+    glow: "rgba(59,157,255,0.5)",
+    min: 800,
+    max: 8_000,
+    bias: 2.2,
+    priceRate: 0.68,
+  },
+  {
+    id: "price-mid-plus",
+    name: "Средний+ кейс",
+    tag: "средние+",
+    desc: "Центр рынка с большим шансом на эпики.",
+    accent: "#4f7bff",
+    glow: "rgba(79,123,255,0.5)",
+    min: 1_500,
+    max: 15_000,
+    bias: 2.2,
+    priceRate: 0.68,
+  },
+  {
+    id: "price-mid-high",
+    name: "Крепкий кейс",
+    tag: "средние++",
+    desc: "Средние и дорогие подарки в равных долях.",
+    accent: "#7c5cff",
+    glow: "rgba(124,92,255,0.5)",
+    min: 2_500,
+    max: 25_000,
+    bias: 2,
+    priceRate: 0.66,
+  },
+  {
+    id: "price-rare",
+    name: "Редкий кейс",
+    tag: "подороже",
+    desc: "Уклон в дорогую половину рынка.",
+    accent: "#b45cff",
+    glow: "rgba(180,92,255,0.5)",
+    min: 5_000,
+    max: 50_000,
+    bias: 1.9,
+    priceRate: 0.64,
+  },
+  {
+    id: "price-expensive",
+    name: "Дорогой кейс",
+    tag: "дорогие",
+    desc: "Дорогие подарки — основной улов этого кейса.",
     accent: "#ffcc33",
     glow: "rgba(255,204,51,0.5)",
-    odds: { common: 0.24, rare: 0.34, epic: 0.28, legendary: 0.12, mythic: 0.02 },
-    priceMul: 12,
+    min: 12_000,
+    max: 120_000,
+    bias: 1.8,
+    priceRate: 0.62,
   },
   {
-    category: "legendary",
-    name: "Легендарный",
-    tag: "Дорого",
-    desc: "Только топ: эпики, легендарки и мифики.",
+    id: "price-elite",
+    name: "Элитный кейс",
+    tag: "очень дорогие",
+    desc: "Только дорогие и легендарные подарки.",
+    accent: "#ff8a3d",
+    glow: "rgba(255,138,61,0.55)",
+    min: 40_000,
+    max: 400_000,
+    bias: 1.7,
+    priceRate: 0.6,
+  },
+  {
+    id: "price-ultimate",
+    name: "Ультра кейс",
+    tag: "топ",
+    desc: "Самый дорогой кейс: топ рынка и мифики.",
     accent: "#ff3d6e",
     glow: "rgba(255,61,110,0.55)",
-    odds: { common: 0, rare: 0.12, epic: 0.42, legendary: 0.36, mythic: 0.1 },
-    priceMul: 60,
+    min: 100_000,
+    max: Infinity,
+    bias: 1.6,
+    priceRate: 0.58,
   },
 ];
 
@@ -382,13 +474,18 @@ function buildCases(): Case[] {
     pool.length ? pool.reduce((a, g) => a + g.stars, 0) / pool.length : 0;
 
   /**
-   * A case costs ~62% of the expected value of its roll, so expensive pools
-   * (Plush Pepe, Durov's Cap, premium models) produce expensive cases while a
-   * bronze case stuffed with cheap gifts stays cheap. The value of the roll is
+   * A case costs a fraction of the expected value of its roll, so expensive
+   * pools (Plush Pepe, Durov's Cap, premium models) produce expensive cases
+   * while a case stuffed with cheap gifts stays cheap. The value of the roll is
    * weighted by the case odds, so a premium case is priced by what it really
    * pays out rather than by its most common tier.
    */
-  const fairPrice = (pool: Gift[], odds: Record<Rarity, number>, floor: number): number => {
+  const fairPrice = (
+    pool: Gift[],
+    odds: Record<Rarity, number>,
+    floor: number,
+    rate = 0.62,
+  ): number => {
     let expected = 0;
     for (const r of RARITY_ORDER) {
       const w = odds[r] ?? 0;
@@ -398,50 +495,97 @@ function buildCases(): Case[] {
       expected += poolValue(tier) * w;
     }
     if (expected <= 0) expected = poolValue(pool);
-    return Math.max(floor, Math.round(expected * 0.62));
+    return Math.max(floor, Math.round(expected * rate));
   };
 
-  // 1. Generic rarity cases: their pool is drawn from all gifts of their tiers
-  for (const t of CASE_TIERS) {
-    const pool: Gift[] = [];
-    for (const r of RARITY_ORDER) {
-      if ((t.odds[r] ?? 0) > 0) pool.push(...GIFTS.filter((g) => g.rarity === r));
-    }
-    const base = fairPrice(pool, t.odds, 150 * t.priceMul);
-    cases.push({
-      id: t.category,
-      name: t.name,
-      tag: t.tag,
-      price: Math.max(150 * t.priceMul, base),
-      accent: t.accent,
-      glow: t.glow,
-      odds: t.odds,
-      desc: t.desc,
-      category: t.category,
-      covers: pickCovers(["model"], 3),
-      pool: [],
-    });
-  }
+  /** Median stars value of a list (0 when empty). */
+  const median = (list: number[]): number => {
+    if (!list.length) return 0;
+    const s = [...list].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
 
-  // 2. One case per real Telegram collection
-  for (const c of COLLECTIONS) {
-    const pool = GIFTS.filter((g) => g.slug === c.slug && (g.kind === "gift" || g.kind === "model"));
-    if (!pool.length) continue;
-    const rare = [...c.models].sort((a, b) => a.rarityPct - b.rarityPct)[0];
-    const odds = { common: 0.45, rare: 0.3, epic: 0.18, legendary: 0.055, mythic: 0.015 };
-    const collectionStars = c.initialStars > 0 ? c.initialStars : c.ton * 40;
+  /**
+   * The pool a price case favours. Gifts inside the band are the core of the
+   * pool; gifts above the band are kept as a rare "surprise" tail so a cheap
+   * case can still drop something nice, but they are heavily down-weighted.
+   * Gifts below the band are dropped (a "дорогой" case should not pay junk).
+   */
+  const bandPool = (min: number, max: number, bias: number): Gift[] => {
+    const out: Gift[] = [];
+    for (const g of GIFTS) {
+      if (g.kind === "symbol") continue;
+      if (g.stars >= min && g.stars <= max) {
+        out.push({ ...g, weight: Math.max(0.0005, g.weight) });
+      } else if (g.stars > max) {
+        // rare tail — a jackpot is still possible, just unlikely
+        out.push({ ...g, weight: Math.max(0.0002, g.weight / Math.pow(bias, 3)) });
+      }
+    }
+    // never return an empty pool
+    return out.length ? out : GIFTS.map((g) => ({ ...g, weight: Math.max(0.0005, g.weight) }));
+  };
+
+  /**
+   * Rarity odds for a price case: a cheap case is mostly common, an expensive
+   * one leans epic/legendary. `t` slides from 0 (cheap) to 1 (top) with the
+   * band's midpoint on a log scale.
+   */
+  const bandOdds = (min: number, max: number): Record<Rarity, number> => {
+    const cap = Number.isFinite(max) ? max : 400_000;
+    const mid = (min + cap) / 2;
+    const t = Math.min(1, Math.max(0, Math.log10(Math.max(10, mid)) / 6));
+    const common = 0.78 - t * 0.62;
+    const rare = 0.16 + t * 0.10;
+    const epic = 0.05 + t * 0.22;
+    const legendary = 0.008 + t * 0.22;
+    const mythic = 0.002 + t * 0.08;
+    const sum = common + rare + epic + legendary + mythic;
+    const n = (v: number) => v / sum;
+    return {
+      common: n(common),
+      rare: n(rare),
+      epic: n(epic),
+      legendary: n(legendary),
+      mythic: n(mythic),
+    };
+  };
+
+  /**
+   * Price of a price case: a fraction of the *typical* (median) in-band gift,
+   * so the ladder tracks the band and stays predictable instead of being
+   * dragged up by a handful of ultra-expensive models. A floor keeps the
+   * cheapest case near ~200 ★.
+   */
+  const bandPrice = (min: number, max: number, rate: number, floor: number): number => {
+    const cap = Number.isFinite(max) ? max : 400_000;
+    // a cheap band has nothing above 1k only rarely, so guard the lower edge
+    const lo = Math.max(min, 15);
+    const inBand = GIFTS.filter((g) => g.stars >= lo && g.stars <= cap && g.kind !== "symbol");
+    const base = inBand.length ? median(inBand.map((g) => g.stars)) : Math.max(floor, lo);
+    return Math.max(floor, Math.round(base * rate));
+  };
+
+  // 1. Ten price cases: "все подарки / дешёвые / средние / дорогие"
+  for (const p of PRICE_CASES) {
+    const odds = bandOdds(p.min, p.max);
+    const pool = bandPool(p.min, p.max, p.bias);
+    const price = bandPrice(p.min, p.max, p.priceRate, 200);
     cases.push({
-      id: `coll-${c.slug}`,
-      name: c.name,
-      tag: "Коллекция",
-      price: fairPrice(pool, odds, Math.max(200, Math.round(collectionStars * 0.55))),
-      accent: "#b45cff",
-      glow: "rgba(180,92,255,0.5)",
+      id: p.id,
+      name: p.name,
+      tag: p.tag,
+      price,
+      accent: p.accent,
+      glow: p.glow,
       odds,
-      desc: `Все модели ${c.name} в одном кейсе.${rare ? ` Самая редкая — «${rare.name}».` : ""}`,
-      category: "collection",
-      covers: pool.filter((g) => g.image).slice(0, 3).map((g) => g.image!),
+      desc: p.desc,
+      category: "price",
+      covers: pickCovers(["model"], 3),
       pool: pool.map((g) => g.id),
+      fromStars: p.min,
+      toStars: Number.isFinite(p.max) ? p.max : undefined,
     });
   }
 
@@ -544,13 +688,41 @@ function buildCases(): Case[] {
 
   // 5. Symbols are intentionally out of the game (no symbol case, no drops).
 
+  // 6. The free 24h case: its own small pool, nothing above 1,000 ★.
+  const freePool = GIFTS.filter(
+    (g) => g.kind !== "symbol" && g.stars >= FREE_CASE_MIN_STARS && g.stars <= FREE_CASE_MAX_STARS,
+  );
+  if (freePool.length) {
+    const odds = { common: 0.6, rare: 0.28, epic: 0.09, legendary: 0.026, mythic: 0.004 };
+    cases.push({
+      id: "free-daily",
+      name: "Бесплатный кейс",
+      tag: "каждые 24 ч",
+      price: 0,
+      accent: "#a3ff12",
+      glow: "rgba(163,255,18,0.45)",
+      odds,
+      desc: "Раз в сутки бесплатно. Подарки от 15 до 1000 ★.",
+      category: "free",
+      covers: freePool.filter((g) => g.image).slice(0, 3).map((g) => g.image!),
+      pool: freePool.map((g) => g.id),
+      fromStars: FREE_CASE_MIN_STARS,
+      toStars: FREE_CASE_MAX_STARS,
+    });
+  }
+
   return cases;
 }
+
+/** The free 24h case drops nothing cheaper than this many stars. */
+export const FREE_CASE_MIN_STARS = 15;
+/** …and nothing more expensive than this. Hard cap inside the free case. */
+export const FREE_CASE_MAX_STARS = 1_000;
 
 export const CASES: Case[] = buildCases();
 
 /** The free 24h case. */
-export const FREE_CASE_CASE_ID = "bronze";
+export const FREE_CASE_CASE_ID = "free-daily";
 export const FREE_CASE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 export const CASE_BY_ID = Object.fromEntries(CASES.map((c) => [c.id, c])) as Record<string, Case>;
 

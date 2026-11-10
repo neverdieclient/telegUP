@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MAX_CASE_PAYOUT, buildCaseStrip, rollCase, rollLuck, rollStarDrop, type RolledItem } from "../lib/rng";
-import { CASES, FREE_CASE_CASE_ID, RARITY_META, casePool, type Case, type Gift } from "../data/gifts";
+import { buildCaseStrip, rollCase, rollLuck, rollStarDrop, type RolledItem } from "../lib/rng";
+import { CASES, FREE_CASE_CASE_ID, FREE_CASE_MAX_STARS, RARITY_META, casePool, type Case, type Gift } from "../data/gifts";
 import { useGame } from "../store/useGame";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
@@ -111,7 +111,7 @@ function CaseCard({ c, onOpen, disabled }: { c: Case; onOpen: () => void; disabl
         <Button
           full
           size="md"
-          variant={c.category === "premium" || c.category === "legendary" ? "violet" : "primary"}
+          variant={c.category === "premium" ? "violet" : "primary"}
           onClick={onOpen}
           disabled={disabled}
           icon={<StarIcon className="size-3.5" />}
@@ -126,13 +126,10 @@ function CaseCard({ c, onOpen, disabled }: { c: Case; onOpen: () => void; disabl
 
 const FILTERS = [
   { id: "all", label: "Все" },
-  { id: "bronze", label: "Бронза" },
-  { id: "silver", label: "Серебро" },
-  { id: "gold", label: "Золото" },
-  { id: "legendary", label: "Легенды" },
-  { id: "collection", label: "Коллекции" },
+  { id: "price", label: "Ценовые" },
   { id: "event", label: "Тематические" },
   { id: "premium", label: "High roller" },
+  { id: "free", label: "Бесплатный" },
 ] as const;
 
 export default function Cases() {
@@ -158,9 +155,11 @@ export default function Cases() {
   const freeReady = freeMs === 0;
 
   const freeCase = useMemo(() => CASES.find((c) => c.id === FREE_CASE_CASE_ID) ?? CASES[0], []);
+  // the free case has its own banner above, so it never appears in the grid
+  const paidCases = useMemo(() => CASES.filter((c) => c.id !== FREE_CASE_CASE_ID), []);
   const visible = useMemo(
-    () => (filter === "all" ? CASES : CASES.filter((c) => c.category === filter)),
-    [filter],
+    () => (filter === "all" ? paidCases : paidCases.filter((c) => c.category === filter)),
+    [filter, paidCases],
   );
 
   const runSpin = useCallback(
@@ -176,7 +175,7 @@ export default function Cases() {
         return;
       }
 
-      const winner = rollCase(c, luckBoost ? 0.45 : 0, free ? MAX_CASE_PAYOUT : Infinity);
+      const winner = rollCase(c, luckBoost ? 0.45 : 0, free ? FREE_CASE_MAX_STARS : Infinity);
       // frequent, small star drops; the free case keeps the same 10,000 ★ ceiling
       const starWin = luckBoost ? rollLuck(0.45) : rollStarDrop();
       const newStrip = buildCaseStrip(c, winner, WINNER_INDEX, STRIP_LEN);
@@ -351,7 +350,7 @@ export default function Cases() {
 
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
         {FILTERS.map((f) => {
-          const count = f.id === "all" ? CASES.length : CASES.filter((c) => c.category === f.id).length;
+          const count = f.id === "all" ? paidCases.length : paidCases.filter((c) => c.category === f.id).length;
           if (!count) return null;
           return (
             <button
@@ -367,9 +366,31 @@ export default function Cases() {
         })}
       </div>
 
+      {/* scroll-synced heading: swipe the names, the grid below follows */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar rounded-2xl border border-white/8 bg-white/[0.02] p-2">
+        {visible.map((c, i) => (
+          <button
+            key={c.id}
+            onClick={() => document.getElementById(`case-${c.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+            className="flex shrink-0 items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left transition-colors hover:bg-white/[0.05]"
+            style={{ borderColor: `${c.accent}44` }}
+          >
+            <span className="grid size-5 place-items-center rounded-md text-[10px] font-black" style={{ background: `${c.accent}22`, color: c.accent }}>
+              {i + 1}
+            </span>
+            <span className="text-[11.5px] font-extrabold tracking-tight text-white/80">{c.name}</span>
+            <span className="text-[10.5px] font-bold tabular-nums" style={{ color: c.accent }}>
+              {c.price.toLocaleString("ru-RU")} ★
+            </span>
+          </button>
+        ))}
+      </div>
+
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {visible.map((c) => (
-          <CaseCard key={c.id} c={c} disabled={spinning || stars < c.price} onOpen={() => runSpin(c, false)} />
+          <div key={c.id} id={`case-${c.id}`} className="scroll-mt-24">
+            <CaseCard c={c} disabled={spinning || stars < c.price} onOpen={() => runSpin(c, false)} />
+          </div>
         ))}
       </section>
 

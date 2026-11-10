@@ -584,8 +584,8 @@ export const useGame = create<State>()(
         // consume the inputs no matter what the roll does
         const idSet = new Set(items.map((i) => i.id));
 
-        // more items → better odds: 2→35%, 3→50%, 4→65%
-        const winOdds = 0.2 + items.length * 0.075;
+        // more items → better odds: 2→40%, 3→60%, 4→80%
+        const winOdds = 0.4 + (items.length - 2) * 0.2;
         const success = Math.random() < winOdds;
 
         if (!success) {

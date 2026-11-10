@@ -12,7 +12,7 @@ import { Button } from "../components/ui/Button";
  * Rules:
  *   • all inputs must be the same collectible (same slug);
  *   • the inputs are always consumed;
- *   • more inputs → higher success chance (2→35 %, 3→50 %, 4→65 %);
+ *   • more inputs → higher success chance (2→40 %, 3→60 %, 4→80 %);
  *   • on success you get a better model of that collectible, or — when it has
  *     no better model — a random gift of a higher rarity.
  */
@@ -51,7 +51,7 @@ export default function Craft() {
   }, [picked, inventory]);
 
   const pickCount = picked.length;
-  const winChance = pickCount >= 2 ? Math.round((0.2 + pickCount * 0.075) * 100) : 0;
+  const winChance = pickCount >= 2 ? Math.round((0.4 + (pickCount - 2) * 0.2) * 100) : 0;
 
   const toggle = (slug: string, id: string) => {
     setResult(null);

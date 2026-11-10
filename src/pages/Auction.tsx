@@ -190,6 +190,13 @@ function fmtLeft(ms: number) {
 
 const ME = "local";
 
+/** Any seller id that means "this user": the offline flag or the online uuid. */
+function mySellerIds(userId?: string | null): Set<string> {
+  const ids = new Set<string>([ME]);
+  if (userId) ids.add(userId);
+  return ids;
+}
+
 /* ------------------------------------------------------------------ page */
 
 type Tab = "live" | "mine" | "new";
@@ -230,6 +237,7 @@ export default function Auction() {
 
   // 1s clock: drives the countdown and settles expired local bids
   useEffect(() => {
+    const mineIds = mySellerIds(user?.id);
     const t = setInterval(() => {
       setTick((n) => n + 1);
       if (onlineEnabled) return;
@@ -265,7 +273,7 @@ export default function Auction() {
         if (settledRef.current.has(key)) continue;
         settledRef.current.add(key);
         // if it was my own lot, the item comes back into my inventory
-        if (lot.seller_id === ME && lot.item_kind === "gift" && GIFT_BY_ID[lot.item_id]) {
+        if (mineIds.has(lot.seller_id) && lot.item_kind === "gift" && GIFT_BY_ID[lot.item_id]) {
           addItem(lot.item_id, "market");
           toast({
             kind: "info",
@@ -282,7 +290,37 @@ export default function Auction() {
       setLots(next);
     }, 1000);
     return () => clearInterval(t);
-  }, [addItem, toast]);
+  }, [addItem, toast, user?.id]);
+
+  /**
+   * Online mode: the backend has no 30-minute auto-return, so sweep any of my
+   * still-open no-bid lots on load and give the item back locally. The lot is
+   * then cancelled on the server so it disappears from the board.
+   */
+  useEffect(() => {
+    if (!onlineEnabled) return;
+    const mineIds = mySellerIds(user?.id);
+    const stale = lots.filter(
+      (l) =>
+        mineIds.has(l.seller_id) &&
+        !l.sold &&
+        !l.cancelled &&
+        l.top_bid === 0 &&
+        isStale(l),
+    );
+    if (!stale.length) return;
+    void (async () => {
+      for (const lot of stale) {
+        const key = `stale:${lot.id}`;
+        if (settledRef.current.has(key)) continue;
+        settledRef.current.add(key);
+        if (lot.item_kind === "gift" && GIFT_BY_ID[lot.item_id]) addItem(lot.item_id, "market");
+        await cancelAuction(lot.id);
+        toast({ kind: "info", title: "Лот вернулся", message: `${lot.item_name} — ставок не было` });
+      }
+      await reload();
+    })();
+  }, [lots, addItem, reload, toast, user?.id]);
 
   const live = useMemo(
     () =>
@@ -291,9 +329,10 @@ export default function Auction() {
         .sort((a, b) => new Date(a.ends_at).getTime() - new Date(b.ends_at).getTime()),
     [lots],
   );
+  const mineIds = useMemo(() => mySellerIds(user?.id), [user?.id]);
   const mine = useMemo(
-    () => lots.filter((l) => l.seller_id === ME || l.seller_id === (user?.id ?? "\u0000")),
-    [lots, user?.id],
+    () => lots.filter((l) => mineIds.has(l.seller_id)),
+    [lots, mineIds],
   );
 
   /* ---- actions ---- */
@@ -308,7 +347,7 @@ export default function Auction() {
       toast({ kind: "error", title: "Недостаточно звёзд", message: `Нужно ${fmt(amount)} ★` });
       return;
     }
-    if (lot.seller_id === ME) {
+    if (mineIds.has(lot.seller_id)) {
       toast({ kind: "error", title: "Свой лот", message: "Нельзя ставить на собственный лот" });
       return;
     }
@@ -458,7 +497,7 @@ export default function Auction() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {live.map((lot) => (
-                <LotCard key={lot.id} lot={lot} onBid={bid} onBuyout={buyout} />
+                <LotCard key={lot.id} lot={lot} owned={mineIds.has(lot.seller_id)} meIds={mineIds} onBid={bid} onBuyout={buyout} />
               ))}
             </div>
           )}
@@ -473,7 +512,7 @@ export default function Auction() {
             </p>
           )}
           {mine.map((lot) => {
-            const won = lot.top_bidder === ME || lot.top_bidder === user?.id;
+            const won = !!lot.top_bidder && mineIds.has(lot.top_bidder);
             const ended = timeLeft(lot.ends_at).ms === 0;
             return (
               <div
@@ -537,10 +576,14 @@ function LotArt({ lot, size = 64 }: { lot: LocalLot; size?: number }) {
 
 function LotCard({
   lot,
+  owned,
+  meIds,
   onBid,
   onBuyout,
 }: {
   lot: LocalLot;
+  owned: boolean;
+  meIds: Set<string>;
   onBid: (lot: LocalLot, amount: number) => void;
   onBuyout: (lot: LocalLot) => void;
 }) {
@@ -550,8 +593,9 @@ function LotCard({
   const gift = lot.item_kind === "gift" ? GIFT_BY_ID[lot.item_id] : undefined;
   // a lot is "live" once the first bid started its 10-minute clock
   const started = lot.top_bid > 0;
-  const mine = lot.top_bidder === ME;
-  const back = returnIn(lot);
+  const mine = !!lot.top_bidder && meIds.has(lot.top_bidder);
+  // the no-bid return countdown only concerns the owner's own lot
+  const back = owned ? returnIn(lot) : null;
   const backLabel =
     back === null ? null : back <= 0 ? "возврат…" : fmtLeft(back);
 
