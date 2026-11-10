@@ -340,8 +340,7 @@ export default function News() {
           </div>
         </div>
         <p className="relative mt-3 rounded-2xl border border-white/6 bg-black/25 px-3 py-2 text-[11.5px] leading-relaxed text-white/45">
-          Здесь публикуем апдейты, фиксы и новости проекта. Писать может только владелец —
-          остальные читают.
+          Здесь публикуем апдейты, фиксы и новости проекта.
         </p>
         <div className="relative mt-3 flex items-center gap-3 text-[10.5px] font-bold text-white/30">
           <span>{posts.length} постов</span>
