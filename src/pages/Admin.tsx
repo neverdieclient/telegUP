@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useGame, formatPhoneNumber, PHONE_FORMATS } from "../store/useGame";
-import { BADGES, BADGE_BY_ID, DISCLAIMER, GIFT_BY_ID, GIFTS, RARITY_META, type BadgeId } from "../data/gifts";
+import { BADGES, BADGE_BY_ID, DISCLAIMER, GIFT_BY_ID, RARITY_META, type BadgeId } from "../data/gifts";
+import { useAllGifts } from "../lib/useCatalog";
+import { CustomGiftEditor } from "./admin/CustomGiftEditor";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
 import { Button } from "../components/ui/Button";
@@ -541,6 +543,9 @@ export default function Admin() {
     if (fresh) setTarget(fresh);
   }, [players, target]);
 
+  // granting must reach owner-made gifts too, not just the scraped catalogue
+  const GIFTS = useAllGifts();
+
   const found = giftQuery.trim()
     ? GIFTS.filter(
         (g) =>
@@ -1074,6 +1079,15 @@ export default function Admin() {
               </p>
             )}
           </div>
+        </Panel>
+
+        {/* ---------------- custom gifts ---------------- */}
+        <Panel
+          title="Мои подарки и улучшения"
+          desc="Создавай свои подарки: «Всем» — обычный публичный, «Тест» — купить может только владелец."
+          badge="custom"
+        >
+          <CustomGiftEditor />
         </Panel>
 
         {/* ---------------- maintenance (self only) ---------------- */}

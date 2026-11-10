@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { BADGE_BY_ID, GIFT_BY_ID, RARITY_META, RARITY_ORDER, SHOP_USERNAMES, type Gift, type Rarity } from "../data/gifts";
+import { BADGE_BY_ID, RARITY_META, RARITY_ORDER, SHOP_USERNAMES, type Gift, type Rarity } from "../data/gifts";
+import { useGiftIndex } from "../lib/useCatalog";
 import { useGame } from "../store/useGame";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
 import { UsernameLootbox } from "../components/gifts/UsernameLootbox";
@@ -31,6 +32,7 @@ const SOURCE_LABEL: Record<string, string> = {
 
 export default function Inventory() {
   const inventory = useGame((s) => s.inventory);
+  const GIFT_BY_ID = useGiftIndex();
   const sellItem = useGame((s) => s.sellItem);
   const sellAll = useGame((s) => s.sellAll);
   const giftItem = useGame((s) => s.giftItem);

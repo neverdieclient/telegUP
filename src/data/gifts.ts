@@ -179,7 +179,7 @@ function markRarity(pct: number): Rarity {
   return rarityFromShare(pct);
 }
 
-const RARITY_TINT: Record<Rarity, string> = {
+export const RARITY_TINT: Record<Rarity, string> = {
   common: "#9aa3ad",
   rare: "#3b9dff",
   epic: "#b45cff",

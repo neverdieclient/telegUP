@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useGame } from "../store/useGame";
-import { GIFT_BY_ID, RARITY_META, DISCLAIMER, BADGE_BY_ID } from "../data/gifts";
+import { RARITY_META, DISCLAIMER, BADGE_BY_ID } from "../data/gifts";
+import { useGiftIndex } from "../lib/useCatalog";
 import { CheckMark } from "../components/ui/CheckMark";
 import { StarIcon, GiftArt } from "../components/gifts/GiftArt";
 import { useAuth, signOut } from "../lib/players";
@@ -18,6 +19,7 @@ export default function ProfilePage() {
   const stats = useGame((s) => s.stats);
   const stars = useGame((s) => s.stars);
   const inventory = useGame((s) => s.inventory);
+  const GIFT_BY_ID = useGiftIndex();
   const shopItems = useGame((s) => s.shopItems);
   const toast = useGame((s) => s.toast);
   const theme = useGame((s) => s.theme);

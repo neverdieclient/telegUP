@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { GIFT_BY_ID } from "../data/gifts";
+import { loadCustomGifts } from "../data/customGifts";
 import { useGame } from "../store/useGame";
 import { onlineEnabled, supabase } from "./supabase";
 import { pushProfileSafe, pullCloudSave } from "./players";
@@ -20,6 +21,15 @@ import { pushProfileSafe, pullCloudSave } from "./players";
  */
 export function useStatsSync() {
   const onlineUserId = useGame((s) => s.onlineUserId);
+
+  // owner-made gifts are shared server-side, so pull the catalogue on boot and
+  // keep it fresh while the tab is open
+  useEffect(() => {
+    if (!onlineEnabled || !supabase) return;
+    void loadCustomGifts();
+    const tick = window.setInterval(() => void loadCustomGifts(), 60_000);
+    return () => window.clearInterval(tick);
+  }, []);
 
   // one pull per account per page load
   const pulledFor = useRef<string | null>(null);

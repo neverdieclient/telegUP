@@ -1,7 +1,10 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
-import { GIFTS, RARITY_META, RARITY_ORDER, type Gift, type Rarity } from "../data/gifts";
+import { RARITY_META, RARITY_ORDER, type Gift, type Rarity } from "../data/gifts";
+import { isPurchasable } from "../data/customGifts";
 import { modelOptions } from "../lib/rng";
+import { useAllGifts, useCustomGiftRows } from "../lib/useCatalog";
+import { useIsOwnerEmail } from "../lib/useIsOwnerEmail";
 import { useGame } from "../store/useGame";
 import { GiftArt, StarIcon, UpgradeIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
@@ -40,6 +43,18 @@ export default function Market() {
   const bumpStat = useGame((s) => s.bumpStat);
   const toast = useGame((s) => s.toast);
 
+  // built-in + owner-made gifts behave identically here
+  const GIFTS = useAllGifts();
+  const owner = useIsOwnerEmail();
+  const customRows = useCustomGiftRows();
+
+  /** A custom gift hidden from this visitor must not be buyable either. */
+  const lockedSlugs = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of customRows) if (!isPurchasable(r, owner)) set.add(r.slug);
+    return set;
+  }, [customRows, owner]);
+
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<"price" | "priceDesc" | "name">("price");
   const [busy, setBusy] = useState<string | null>(null);
@@ -63,6 +78,10 @@ export default function Market() {
   }, [tab]);
 
   const buy = (gift: Gift) => {
+    if (lockedSlugs.has(gift.slug)) {
+      toast({ kind: "error", title: "Недоступно", message: "Этот подарок может купить только владелец" });
+      return;
+    }
     if (stars < gift.stars) {
       toast({ kind: "error", title: "Мало звёзд", message: `Нужно ${gift.stars.toLocaleString("ru-RU")} ★` });
       return;
@@ -154,7 +173,8 @@ export default function Market() {
       <section className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {list.slice(0, 300).map((g, i) => {
           const meta = RARITY_META[g.rarity];
-          const canBuy = stars >= g.stars;
+          const locked = lockedSlugs.has(g.slug);
+          const canBuy = !locked && stars >= g.stars;
           return (
             <motion.article
               key={g.id}
@@ -215,7 +235,7 @@ export default function Market() {
                     disabled={!canBuy || busy === g.id}
                     onClick={() => buy(g)}
                   >
-                    {busy === g.id ? "Покупка…" : canBuy ? "Купить" : "Мало ★"}
+                    {busy === g.id ? "Покупка…" : locked ? "Только владельцу" : canBuy ? "Купить" : "Мало ★"}
                   </Button>
                 </div>
               </div>
@@ -274,11 +294,17 @@ export default function Market() {
                   <Button
                     size="sm"
                     className="mt-2"
-                    variant={stars >= detail.stars ? "primary" : "ghost"}
-                    disabled={stars < detail.stars || busy === detail.id}
+                    variant={!lockedSlugs.has(detail.slug) && stars >= detail.stars ? "primary" : "ghost"}
+                    disabled={lockedSlugs.has(detail.slug) || stars < detail.stars || busy === detail.id}
                     onClick={() => buy(detail)}
                   >
-                    {busy === detail.id ? "Покупка…" : stars >= detail.stars ? "Купить базовый" : "Мало ★"}
+                    {busy === detail.id
+                      ? "Покупка…"
+                      : lockedSlugs.has(detail.slug)
+                        ? "Только владельцу"
+                        : stars >= detail.stars
+                          ? "Купить базовый"
+                          : "Мало ★"}
                   </Button>
                 </div>
                 <button
@@ -303,7 +329,8 @@ export default function Market() {
                 ) : (
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                     {detailModels.map((m) => {
-                      const canBuy = stars >= m.stars;
+                      const locked = lockedSlugs.has(m.slug);
+                      const canBuy = !locked && stars >= m.stars;
                       const meta = RARITY_META[m.rarity];
                       return (
                         <div
@@ -329,7 +356,7 @@ export default function Market() {
                             disabled={!canBuy || busy === m.id}
                             onClick={() => buy(m)}
                           >
-                            {busy === m.id ? "…" : canBuy ? "Купить" : "Мало ★"}
+                            {busy === m.id ? "…" : locked ? "Владельцу" : canBuy ? "Купить" : "Мало ★"}
                           </Button>
                         </div>
                       );

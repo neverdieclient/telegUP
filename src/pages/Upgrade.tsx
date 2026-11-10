@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
-import { GIFT_BY_ID, GIFTS, RARITY_META, type Gift } from "../data/gifts";
+import { GIFTS, RARITY_META, type Gift } from "../data/gifts";
+import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
 import { chance, rand } from "../lib/rng";
 import { useGame } from "../store/useGame";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
@@ -43,10 +44,10 @@ function formatMult(mult: number) {
 }
 
 /** Closest real gift to `value` stars, for building preset upgrades. */
-function nearestGift(value: number, excludeId?: string): Gift | null {
+function nearestGift(value: number, excludeId?: string, pool: Gift[] = GIFTS): Gift | null {
   let best: Gift | null = null;
   let bestDiff = Infinity;
-  for (const g of GIFTS) {
+  for (const g of pool) {
     if (g.id === excludeId) continue;
     const diff = Math.abs(g.stars - value) / value;
     if (diff < bestDiff) {
@@ -139,6 +140,8 @@ function GiftPick({
 
 export default function UpgradePage() {
   const inventory = useGame((s) => s.inventory);
+  const GIFT_BY_ID = useGiftIndex();
+  const GIFTS = useAllGifts();
   const removeItem = useGame((s) => s.removeItem);
   const addItem = useGame((s) => s.addItem);
   const bumpStat = useGame((s) => s.bumpStat);
@@ -180,7 +183,7 @@ export default function UpgradePage() {
     }
     setPresetMult(mult);
     setPhase("idle");
-    const idea = nearestGift(source.stars * mult, source.id);
+    const idea = nearestGift(source.stars * mult, source.id, GIFTS);
     if (idea) setTargetId(idea.id);
     else setTargetId("");
   };

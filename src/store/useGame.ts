@@ -7,12 +7,28 @@ import {
   GIFTS,
   RARITY_ORDER,
   type BadgeId,
+  type Gift,
   type PurchasedShopItem,
 } from "../data/gifts";
 import { pick, randInt, uid } from "../lib/rng";
+import { getGiftIndex } from "../data/customGifts";
 import { onBanSignal } from "../lib/banSignal";
 import { DEFAULT_THEME, type ThemeId } from "../lib/theme";
 import { rollUsername, USERNAME_BOX_PRICE } from "../lib/usernameBox";
+
+/**
+ * Store-side lookups that also see owner-made gifts.
+ *
+ * `GIFT_BY_ID` is a module constant built from the scraped catalogue, while
+ * custom gifts arrive from Supabase at runtime, so every economy action has to
+ * resolve ids through these helpers — otherwise a custom present would sell for
+ * nothing and could never be upgraded or crafted.
+ */
+const giftOf = (id: string | null | undefined) =>
+  id ? GIFT_BY_ID[id] ?? getGiftIndex()[id] : undefined;
+
+/** Built-ins plus everything currently published in `custom_gifts`. */
+const allGifts = (): Gift[] => [...GIFTS, ...Object.values(getGiftIndex())];
 
 export type InventoryItem = {
   /** instance id */
@@ -498,7 +514,7 @@ export const useGame = create<State>()(
       sellItem: (instanceId) => {
         const item = get().inventory.find((i) => i.id === instanceId);
         if (!item) return 0;
-        const gift = GIFT_BY_ID[item.giftId];
+        const gift = giftOf(item.giftId);
         if (!gift) return 0;
         const gain = Math.round(gift.stars * (get().admin.payoutMultiplier / 100));
         set((s) => ({
@@ -515,7 +531,7 @@ export const useGame = create<State>()(
         let count = 0;
         let stars = 0;
         for (const item of inventory) {
-          const gift = GIFT_BY_ID[item.giftId];
+          const gift = giftOf(item.giftId);
           const matches = gift && (filter ? filter(item.giftId) : true);
           if (!matches) {
             kept.push(item);
@@ -545,8 +561,8 @@ export const useGame = create<State>()(
       upgradeItemModel: (instanceId, targetGiftId) => {
         const source = get().inventory.find((i) => i.id === instanceId);
         if (!source) return null;
-        const target = GIFT_BY_ID[targetGiftId];
-        if (!target || target.slug !== GIFT_BY_ID[source.giftId]?.slug) return null;
+        const target = giftOf(targetGiftId);
+        if (!target || target.slug !== giftOf(source.giftId)?.slug) return null;
         const next: InventoryItem = {
           id: uid("inv"),
           giftId: targetGiftId,
@@ -574,10 +590,10 @@ export const useGame = create<State>()(
         if (items.length < 2) return { ok: false, reason: "too-few" };
         if (items.length > 4) return { ok: false, reason: "mismatch" };
 
-        const source = GIFT_BY_ID[items[0].giftId];
+        const source = giftOf(items[0].giftId);
         if (!source) return { ok: false, reason: "missing" };
         // every item must be the same collectible (the same slug)
-        if (!items.every((i) => GIFT_BY_ID[i.giftId]?.slug === source.slug)) {
+        if (!items.every((i) => giftOf(i.giftId)?.slug === source.slug)) {
           return { ok: false, reason: "mismatch" };
         }
 
@@ -597,7 +613,8 @@ export const useGame = create<State>()(
         }
 
         // pick a better model of the same collectible — the next value step up
-        const sameModel = GIFTS.filter(
+        const catalogue = allGifts();
+        const sameModel = catalogue.filter(
           (g) => g.slug === source.slug && g.kind === "model" && g.stars > source.stars,
         );
         let target = sameModel.length
@@ -609,10 +626,10 @@ export const useGame = create<State>()(
         if (!target) {
           const idx = RARITY_ORDER.indexOf(source.rarity);
           const higherRarities = RARITY_ORDER.slice(Math.max(0, idx + 1));
-          const pool = GIFTS.filter(
+          const pool = catalogue.filter(
             (g) => g.kind === "gift" && higherRarities.includes(g.rarity),
           );
-          target = pool.length ? pick(pool) : pick(GIFTS.filter((g) => g.stars > source.stars));
+          target = pool.length ? pick(pool) : pick(catalogue.filter((g) => g.stars > source.stars));
         }
         if (!target) {
           set((cur) => ({ inventory: cur.inventory.filter((i) => !idSet.has(i.id)) }));
@@ -827,7 +844,10 @@ export const useGame = create<State>()(
             (i): i is InventoryItem =>
               Boolean(i) &&
               typeof (i as InventoryItem).giftId === "string" &&
-              Boolean(GIFT_BY_ID[(i as InventoryItem).giftId]),
+              // keep custom ids even before the catalogue has loaded, otherwise
+              // a cloud pull would silently drop owner-made gifts
+              (Boolean(giftOf((i as InventoryItem).giftId)) ||
+                (i as InventoryItem).giftId.startsWith("custom-")),
           );
           const marks = [...(save.marks ?? [])];
           if (save.tier === "Premium" && !marks.includes("premium")) marks.push("premium");
@@ -923,7 +943,7 @@ export const useGame = create<State>()(
       adminGrantAllGifts: () =>
         set((s) => {
           const now = Date.now();
-          const added: InventoryItem[] = GIFTS.map((g) => ({
+          const added: InventoryItem[] = allGifts().map((g) => ({
             id: uid("inv"),
             giftId: g.id,
             acquiredAt: now,
@@ -1058,7 +1078,7 @@ export const useGame = create<State>()(
 
 /** Small helpers used across pages. */
 export const selectInventoryValue = (state: State) =>
-  state.inventory.reduce((acc, i) => acc + (GIFT_BY_ID[i.giftId]?.stars ?? 0), 0);
+  state.inventory.reduce((acc, i) => acc + (giftOf(i.giftId)?.stars ?? 0), 0);
 
 // The data layer raises this when a server RPC rejects with 'banned'. Flip the
 // flag so App swaps in the block notice — even if the login check was missed.

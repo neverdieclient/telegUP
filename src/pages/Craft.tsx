@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { GIFT_BY_ID } from "../data/gifts";
+import { useGiftIndex } from "../lib/useCatalog";
 import { useGame } from "../store/useGame";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
@@ -18,6 +18,7 @@ import { Button } from "../components/ui/Button";
  */
 export default function Craft() {
   const inventory = useGame((s) => s.inventory);
+  const GIFT_BY_ID = useGiftIndex();
   const craftItems = useGame((s) => s.craftItems);
   const toast = useGame((s) => s.toast);
 

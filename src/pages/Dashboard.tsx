@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useGame } from "../store/useGame";
-import { GIFTS, GIFT_BY_ID, RARITY_META, BADGE_BY_ID } from "../data/gifts";
+import { RARITY_META, BADGE_BY_ID } from "../data/gifts";
+import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
 import { StarIcon, GiftArt } from "../components/gifts/GiftArt";
 import { CheckMark } from "../components/ui/CheckMark";
 import { FortuneGame } from "../components/FortuneGame";
@@ -63,6 +64,8 @@ const QUICK_LINKS = [
 
 export default function Dashboard() {
   const { stars, inventory, profile, stats, joinedAt, lastFreeCaseAt } = useGame();
+  const GIFT_BY_ID = useGiftIndex();
+  const GIFTS = useAllGifts();
 
   const inventoryValue = useMemo(
     () => inventory.reduce((acc, i) => acc + (GIFT_BY_ID[i.giftId]?.stars ?? 0), 0),
