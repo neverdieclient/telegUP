@@ -864,9 +864,16 @@ export const useGame = create<State>()(
           // yet). Local is the player's own balance; the pull may only raise
           // it (owner grant) — never lower it below what is already on screen.
           const cloudStars = Math.max(0, Math.round(save.stars ?? s.stars));
+          // Same rule for the inventory: an empty cloud list must not erase the
+          // gifts sitting in this browser. Older builds pushed the counters but
+          // never the jsonb, so a real collection lived only locally — adopting
+          // `[]` on every load looked like "все подарки пропали". Only take the
+          // server copy when it is non-empty (a genuine save from another
+          // device), otherwise keep what we have.
+          const cloudInv = inv.length > 0 ? inv : s.inventory;
           return {
             stars: Math.max(s.stars, cloudStars),
-            inventory: inv,
+            inventory: cloudInv,
             joinedAt: save.joined_at ? new Date(save.joined_at).getTime() : s.joinedAt,
             lastFreeCaseAt: save.last_free_case ? new Date(save.last_free_case).getTime() : s.lastFreeCaseAt,
             lastDailyAt: save.last_daily ? new Date(save.last_daily).getTime() : s.lastDailyAt,

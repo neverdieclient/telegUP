@@ -6,7 +6,7 @@ import { modelOptions } from "../lib/rng";
 import { useAllGifts, useCustomGiftRows } from "../lib/useCatalog";
 import { useIsOwnerEmail } from "../lib/useIsOwnerEmail";
 import { useGame } from "../store/useGame";
-import { GiftArt, StarIcon, UpgradeIcon } from "../components/gifts/GiftArt";
+import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
 
 type Filter = "all" | Rarity;
@@ -218,16 +218,6 @@ export default function Market() {
                 </div>
 
                 <div className="mt-2 flex gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="w-9 shrink-0 px-0"
-                    onClick={() => setDetail(g)}
-                    title="Улучшения"
-                    aria-label="Улучшения"
-                  >
-                    <UpgradeIcon className="size-4 text-violet" />
-                  </Button>
                   <Button
                     full
                     size="sm"

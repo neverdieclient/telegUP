@@ -379,9 +379,44 @@ export async function pushProfileSafe(row: {
   });
   if (error) {
     if (/banned/i.test(error.message)) signalBanned();
+    // The RPC can be missing/broken server-side (an older deploy shipped one
+    // whose body threw «missing FROM-clause entry for table p», which silently
+    // dropped every inventory). `profiles` allows a player to update their own
+    // row, so fall back to a direct write: it keeps the gift list saving even
+    // while the corrected `player_push_profile` has not been applied yet.
+    await pushInventoryDirect(row);
     return null;
   }
   return typeof data === "string" ? data : null;
+}
+
+/**
+ * Direct `profiles` update used when the push RPC fails. Writes only the
+ * progression columns (never marks/badges/tier — those stay owner-only).
+ */
+async function pushInventoryDirect(row: {
+  username: string;
+  nickname: string;
+  stars: number;
+  inventory_value: number;
+  items: number;
+  inventory?: unknown[];
+}): Promise<void> {
+  if (!supabase) return;
+  const { data } = await supabase.auth.getUser();
+  const uid = data?.user?.id;
+  if (!uid) return;
+  await supabase
+    .from("profiles")
+    .update({
+      username: row.username.slice(0, 64),
+      nickname: row.nickname.slice(0, 64),
+      stars: Math.max(0, Math.round(row.stars)),
+      inventory_value: Math.max(0, Math.round(row.inventory_value)),
+      items: Math.max(0, Math.round(row.items)),
+      ...(row.inventory ? { inventory: row.inventory } : {}),
+    })
+    .eq("id", uid);
 }
 
 /** Read this account's cloud save. Returns null offline or when the row is missing. */
