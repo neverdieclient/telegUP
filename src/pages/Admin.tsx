@@ -322,8 +322,8 @@ function PlayerInventory({ playerId, nickname }: { playerId: string; nickname: s
     setItems(null);
     setError(null);
     fetchPlayerInventory(playerId)
-      .then((list) => {
-        if (!dead) setItems(list);
+      .then((res) => {
+        if (!dead) setItems(res.items);
       })
       .catch((e: unknown) => {
         if (!dead) setError(e instanceof Error ? e.message : "Не удалось загрузить");

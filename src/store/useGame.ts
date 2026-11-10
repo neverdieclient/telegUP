@@ -97,6 +97,8 @@ export type Profile = {
   purchasedUsernames: string[];
   /** second, collectible username shown under the main one */
   collectibleUsername: string | null;
+  /** show my gift inventory to other players (public player card) */
+  showInventory: boolean;
   /**
    * The nickname the player picked themselves. The account mirror only fills
    * `nickname` from the registration name while this is empty, so a rename is
@@ -214,6 +216,8 @@ type State = {
   /** Avatar/header cosmetics. */
   setAccent: (accent: string | null, gradient: string | null) => void;
   setBio: (bio: string | null) => void;
+  /** Privacy switch: «Показывать мои подарки другим». */
+  setShowInventory: (show: boolean) => void;
   /** Wipe an account's cosmetics back to defaults. */
   adminClearCosmetics: () => void;
   /** Supabase user id of the signed-in player, mirrored into the store. */
@@ -347,6 +351,7 @@ export const initialState = {
     bio: null as string | null,
     purchasedUsernames: [] as string[],
     collectibleUsername: null,
+    showInventory: true,
   },
   joinedAt: Date.now(),
   lastFreeCaseAt: null as number | null,
@@ -803,6 +808,9 @@ export const useGame = create<State>()(
         set((s) => ({ profile: { ...s.profile, accent, gradient } })),
 
       setBio: (bio) => set((s) => ({ profile: { ...s.profile, bio: bio?.slice(0, 60) ?? null } })),
+
+      setShowInventory: (show) =>
+        set((s) => ({ profile: { ...s.profile, showInventory: show } })),
 
       adminClearCosmetics: () =>
         set((s) => ({

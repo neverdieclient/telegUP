@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGame } from "../store/useGame";
 import { RARITY_META, DISCLAIMER, BADGE_BY_ID } from "../data/gifts";
 import { useGiftIndex } from "../lib/useCatalog";
 import { CheckMark } from "../components/ui/CheckMark";
 import { StarIcon, GiftArt } from "../components/gifts/GiftArt";
-import { useAuth, signOut } from "../lib/players";
+import { useAuth, signOut, fetchPlayer, setInventoryVisibility } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 import { Row, Toggle, MARKS } from "./profile/rows";
 import { THEMES } from "../lib/theme";
@@ -26,6 +26,8 @@ export default function ProfilePage() {
   const setTheme = useGame((s) => s.setTheme);
   const deviceMode = useGame((s) => s.deviceMode);
   const chooseDevice = useGame((s) => s.chooseDevice);
+  const showInventory = useGame((s) => s.profile.showInventory);
+  const setShowInventory = useGame((s) => s.setShowInventory);
   const { user } = useAuth();
 
   const [draft, setDraft] = useState(profile.nickname);
@@ -54,6 +56,31 @@ export default function ProfilePage() {
         .slice(0, 5),
     [inventory],
   );
+
+  // the switch lives on the server too, so it holds across devices
+  useEffect(() => {
+    if (!onlineEnabled || !user) return;
+    let dead = false;
+    fetchPlayer(user.id).then((row) => {
+      if (dead || !row) return;
+      const serverShow = (row as { show_inventory?: boolean | null }).show_inventory;
+      if (typeof serverShow === "boolean") setShowInventory(serverShow);
+    });
+    return () => {
+      dead = true;
+    };
+  }, [user, setShowInventory]);
+
+  const onToggleInventory = () => {
+    const next = !showInventory;
+    setShowInventory(next);
+    if (!onlineEnabled || !user) return;
+    void setInventoryVisibility(next).then((res) => {
+      if (res.error) {
+        toast({ kind: "error", title: "Не сохранилось", message: "Запусти supabase/inventory-visibility.sql" });
+      }
+    });
+  };
 
   const saveNick = () => {
     const clean = draft.trim().replace(/^@/, "");
@@ -251,6 +278,9 @@ export default function ProfilePage() {
             </Row>
             <Row label="Онлайн-аккаунт" hint="прогресс в облаке">
               <span className="text-[11px] font-bold text-white/40">{user ? "включён" : "выключен"}</span>
+            </Row>
+            <Row label="Показывать мои подарки другим" hint="инвентарь в профиле игрока">
+              <Toggle on={showInventory} onClick={onToggleInventory} />
             </Row>
             <Row label="Версия" hint="компьютерная или мобильная раскладка">
               <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/30 p-0.5">

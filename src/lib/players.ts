@@ -22,6 +22,8 @@ export type PlayerRow = {
   bio?: string | null;
   accent?: string | null;
   gradient?: string | null;
+  /** privacy switch: whether other players may browse this inventory */
+  show_inventory?: boolean | null;
 };
 
 export type AuthState = {
@@ -108,25 +110,41 @@ export type RemoteInventoryItem = {
 };
 
 /**
- * Another player's inventory, for the admin panel.
+ * Another player's inventory, for the admin panel and the public player card.
  *
- * `profiles` is world-readable (the leaderboard needs it), so the owner can
- * read the `inventory` jsonb column directly — no elevated function required.
+ * `profiles` is world-readable (the leaderboard needs it), so the `inventory`
+ * jsonb column comes down directly — no elevated function required.
+ *
+ * `show` mirrors the profile's privacy switch: when a player has turned their
+ * collection off, callers must render «Инвентарь скрыт», not the gift list.
  */
-export async function fetchPlayerInventory(playerId: string): Promise<RemoteInventoryItem[]> {
-  if (!supabase) return [];
+export async function fetchPlayerInventory(
+  playerId: string,
+): Promise<{ items: RemoteInventoryItem[]; show: boolean }> {
+  if (!supabase) return { items: [], show: true };
   const { data, error } = await supabase
     .from("profiles")
-    .select("inventory")
+    .select("inventory,show_inventory")
     .eq("id", playerId)
     .maybeSingle();
-  if (error || !data) return [];
-  const raw = (data as { inventory?: unknown }).inventory;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter(
-    (i): i is RemoteInventoryItem =>
-      Boolean(i) && typeof (i as RemoteInventoryItem).giftId === "string",
-  );
+  if (error || !data) return { items: [], show: true };
+  const row = data as { inventory?: unknown; show_inventory?: boolean | null };
+  const raw = row.inventory;
+  const items = Array.isArray(raw)
+    ? raw.filter(
+        (i): i is RemoteInventoryItem =>
+          Boolean(i) && typeof (i as RemoteInventoryItem).giftId === "string",
+      )
+    : [];
+  // a missing column (migration not run yet) reads as `undefined` → stay open
+  return { items, show: row.show_inventory !== false };
+}
+
+/** Flip the signed-in player's «Показывать мои подарки другим» switch. */
+export async function setInventoryVisibility(show: boolean): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("player_set_inventory_visibility", { p_show: show });
+  return error ? { error: error.message } : {};
 }
 
 /**

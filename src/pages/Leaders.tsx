@@ -1,10 +1,18 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
-import { BADGE_BY_ID, DISCLAIMER, GIFT_BY_ID, GIFTS, RARITY_META, type BadgeId } from "../data/gifts";
+import { BADGE_BY_ID, DISCLAIMER, RARITY_META, type BadgeId } from "../data/gifts";
 import { useGame } from "../store/useGame";
+import { useGiftIndex } from "../lib/useCatalog";
 import { GiftArt } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
-import { fetchTop, searchPlayers, useAuth, type PlayerRow } from "../lib/players";
+import {
+  fetchPlayerInventory,
+  fetchTop,
+  searchPlayers,
+  useAuth,
+  type PlayerRow,
+  type RemoteInventoryItem,
+} from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 
 const MARKS: CheckMarkKind[] = ["basic"];
@@ -31,10 +39,53 @@ function PlayerMarks({ p, size = 14 }: { p: PlayerRow; size?: number }) {
 }
 
 function ProfileModal({ player, onClose }: { player: PlayerRow; onClose: () => void }) {
-  const gifts = useMemo(() => {
-    const owned = new Set<string>();
-    return GIFTS.filter((g) => g.slug === player.username.toLowerCase() || owned.has(g.id)).slice(0, 8);
-  }, [player]);
+  const GIFT_BY_ID = useGiftIndex();
+  const [items, setItems] = useState<RemoteInventoryItem[] | null>(null);
+  const [show, setShow] = useState(true);
+  const [loading, setLoading] = useState(onlineEnabled);
+
+  useEffect(() => {
+    if (!onlineEnabled) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    let dead = false;
+    setLoading(true);
+    fetchPlayerInventory(player.id)
+      .then((res) => {
+        if (dead) return;
+        setItems(res.items);
+        setShow(res.show);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (dead) return;
+        setItems([]);
+        setLoading(false);
+      });
+    return () => {
+      dead = true;
+    };
+  }, [player.id]);
+
+  // group identical gifts, cheapest first, capped so long inventories scroll
+  const grouped = useMemo(() => {
+    if (!items) return [];
+    const map = new Map<string, { giftId: string; count: number; newest: number }>();
+    for (const i of items) {
+      const entry = map.get(i.giftId) ?? { giftId: i.giftId, count: 0, newest: 0 };
+      entry.count++;
+      entry.newest = Math.max(entry.newest, i.acquiredAt ?? 0);
+      map.set(i.giftId, entry);
+    }
+    return [...map.values()].sort((a, b) => b.newest - a.newest);
+  }, [items]);
+
+  const visible = useMemo(
+    () => grouped.filter((g) => GIFT_BY_ID[g.giftId]),
+    [grouped, GIFT_BY_ID],
+  );
 
   return (
     <motion.div
@@ -42,7 +93,7 @@ function ProfileModal({ player, onClose }: { player: PlayerRow; onClose: () => v
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
- className="fixed inset-0 z-[95] grid place-items-center overflow-y-auto bg-black/80 p-4 backdrop-blur"
+      className="fixed inset-0 z-[95] grid place-items-center overflow-y-auto bg-black/80 p-4 backdrop-blur"
     >
       <motion.div
         initial={{ opacity: 0, y: 24, scale: 0.97 }}
@@ -50,7 +101,7 @@ function ProfileModal({ player, onClose }: { player: PlayerRow; onClose: () => v
         exit={{ opacity: 0, y: 12, scale: 0.98 }}
         transition={{ type: "spring", stiffness: 320, damping: 28 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0f0f13]"
+        className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0f0f13]"
       >
         <div className="relative overflow-hidden border-b border-white/8 bg-gradient-to-br from-white/[0.07] to-transparent p-5">
           <div className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full bg-violet/20 blur-[70px]" />
@@ -80,7 +131,7 @@ function ProfileModal({ player, onClose }: { player: PlayerRow; onClose: () => v
           </div>
         </div>
 
-        <div className="p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {player.badges.length > 0 && (
             <div className="mb-4">
               <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">бейджи</p>
@@ -102,17 +153,55 @@ function ProfileModal({ player, onClose }: { player: PlayerRow; onClose: () => v
             </div>
           )}
 
-          {gifts.length > 0 && (
-            <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">в инвентаре</p>
-              <div className="grid grid-cols-4 gap-1.5">
-                {gifts.map((g) => (
-                  <div key={g.id} className={`flex flex-col items-center rounded-xl border bg-black/25 p-1.5 ${RARITY_META[g.rarity].ring}`}>
-                    <GiftArt gift={g} size={38} rounded="rounded-lg" />
-                    <p className="mt-1 w-full truncate text-center text-[8.5px] font-bold text-white/55">{g.variant}</p>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+            в инвентаре
+            {!loading && show && visible.length > 0 && (
+              <span className="ml-1.5 font-normal normal-case tracking-normal text-white/25">
+                {items?.length} шт
+              </span>
+            )}
+          </p>
+
+          {loading && <p className="py-4 text-center text-[11.5px] text-white/30">Загрузка…</p>}
+
+          {!loading && !show && (
+            <div className="rounded-2xl border border-white/8 bg-black/30 px-4 py-6 text-center">
+              <p className="text-[12.5px] font-bold text-white/60">Инвентарь скрыт</p>
+              <p className="mt-1 text-[10.5px] text-white/30">Игрок закрыл показ своих подарков.</p>
+            </div>
+          )}
+
+          {!loading && show && visible.length === 0 && (
+            <div className="rounded-2xl border border-white/8 bg-black/30 px-4 py-6 text-center">
+              <p className="text-[12.5px] font-bold text-white/60">Пока пусто</p>
+              <p className="mt-1 text-[10.5px] text-white/30">У игрока ещё нет подарков.</p>
+            </div>
+          )}
+
+          {!loading && show && visible.length > 0 && (
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+              {visible.map((g) => {
+                const gift = GIFT_BY_ID[g.giftId];
+                return (
+                  <div
+                    key={g.giftId}
+                    className={`relative flex flex-col items-center rounded-xl border bg-black/25 p-1.5 ${RARITY_META[gift.rarity].ring}`}
+                  >
+                    <GiftArt gift={gift} size={40} rounded="rounded-lg" />
+                    <p className="mt-1 w-full truncate text-center text-[8.5px] font-bold text-white/55">
+                      {gift.variant === "Gift" ? gift.name : gift.variant}
+                    </p>
+                    <p className="text-[8.5px] font-bold tabular-nums text-neon/70">
+                      {gift.stars.toLocaleString("ru-RU")}★
+                    </p>
+                    {g.count > 1 && (
+                      <span className="absolute right-1 top-1 rounded-md border border-white/12 bg-black/70 px-1 text-[9px] font-bold tabular-nums text-white/75">
+                        ×{g.count}
+                      </span>
+                    )}
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
           )}
 
@@ -137,10 +226,11 @@ export default function Leaders() {
   const [results, setResults] = useState<PlayerRow[]>([]);
   const [selected, setSelected] = useState<PlayerRow | null>(null);
   const [searching, setSearching] = useState(false);
+  const GIFT_BY_ID = useGiftIndex();
 
   const inventoryValue = useMemo(
     () => inventory.reduce((a, i) => a + (GIFT_BY_ID[i.giftId]?.stars ?? 0), 0),
-    [inventory],
+    [inventory, GIFT_BY_ID],
   );
 
   // locally build a row for the signed-in visitor

@@ -221,12 +221,12 @@ export default function Market() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="shrink-0"
+                    className="w-9 shrink-0 px-0"
                     onClick={() => setDetail(g)}
-                    title="Показать улучшенные модели"
-                    icon={<UpgradeIcon className="size-4 text-violet" />}
+                    title="Улучшения"
+                    aria-label="Улучшения"
                   >
-                    Улучшения
+                    <UpgradeIcon className="size-4 text-violet" />
                   </Button>
                   <Button
                     full
