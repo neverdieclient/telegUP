@@ -130,7 +130,7 @@ export async function loadDrops(force = false): Promise<void> {
   const { data, error } = await supabase
     .from("live_drops")
     .select("*")
-    .order("started_at", { ascending: false });
+    .order("starts_at", { ascending: false });
   if (error) {
     loadError = error.message;
   } else {

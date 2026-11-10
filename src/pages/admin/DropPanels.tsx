@@ -92,7 +92,7 @@ export function DropPanel() {
     const res = await closeDrop(active.id);
     setBusy(false);
     if (res.error) toast({ kind: "error", title: "Не вышло", message: res.error });
-    else toast({ kind: "success", title: "Дроп закрыт", message: "Подарок больше не продаётся" });
+    else toast({ kind: "success", title: "Дроп выключен", message: "Подарок остался в каталоге, но купить его нельзя" });
   };
 
   const HOURS: { label: string; value: number | null }[] = [
@@ -121,7 +121,7 @@ export function DropPanel() {
 
       {error && (
         <p className="mb-2 rounded-xl border border-mythic/30 bg-mythic/10 px-3 py-2 text-[11px] font-bold text-mythic">
-          {error}. Запусти `supabase/live-drops.sql`.
+          {error}
         </p>
       )}
 
@@ -143,13 +143,19 @@ export function DropPanel() {
                   ? "ещё не начался"
                   : active.ends_at
                     ? `осталось ${formatLeft(active.msLeft)}`
-                    : "без ограничения"}
+                    : "без срока — пока не выключишь"}
               </p>
             </div>
             <Button size="sm" variant="danger" disabled={busy} onClick={() => void finish()}>
-              Закончить
+              {busy ? "…" : "Выключить"}
             </Button>
           </div>
+          {!active.ends_at && (
+            <p className="mt-2 text-[10px] leading-relaxed text-white/30">
+              Дроп бессрочный: он идёт, пока не нажмёшь «Выключить». После этого подарок останется в
+              каталоге, но купить его будет нельзя.
+            </p>
+          )}
         </div>
       )}
 
