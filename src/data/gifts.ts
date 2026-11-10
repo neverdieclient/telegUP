@@ -47,6 +47,12 @@ export type Gift = {
   variant: string;
   kind: "gift" | "model" | "symbol";
   image: string | null;
+  /**
+   * True when the model has its own artwork. Models without a downloaded
+   * image fall back to the collection art, so the UI overlays a rarity tint
+   * and the model initials to keep them visually distinct.
+   */
+  hasOwnImage?: boolean;
   gradient: string | null;
   /** main accent color of the card */
   tint: string;
@@ -147,12 +153,22 @@ export function realStarsFor(ton: number): number {
 
 /** Stars value of a gift: share of the collection price scaled by real market data. */
 function starsFor(ton: number, collectionTon: number, collectionStars: number, isModel: boolean): number {
-  // A gift is worth roughly `collectionStars` (its star price in Telegram).
-  // Models are rarer and more expensive: scale by their TON ratio.
-  const base = collectionStars > 0 ? collectionStars : Math.max(50, Math.round(collectionTon * 10));
-  if (!isModel) return Math.max(10, Math.round(base));
+  // The gift itself leans on its Telegram star price, with the old TON fallback.
+  if (!isModel) {
+    const giftBase = collectionStars > 0 ? collectionStars : Math.max(50, Math.round(collectionTon * 10));
+    return Math.max(10, Math.round(giftBase));
+  }
+  // Models: some collections store a tiny placeholder in `collectionStars`
+  // (e.g. Candy Cane: 10★ for a 3.98 TON base). Fall back to a TON-derived
+  // value so models keep their spread instead of collapsing onto one floor.
+  const tonOut = Math.max(50, Math.round(collectionTon * 10));
+  const base = collectionStars > 0 ? Math.max(collectionStars, tonOut) : tonOut;
   if (ton > 0 && collectionTon > 0) {
-    return Math.max(20, Math.round(base * Math.max(1, ton / Math.max(0.01, collectionTon))));
+    // a gentler curve (sqrt) keeps the numbers apart when the ton ratio is ~1
+    const ratio = Math.max(1, ton / Math.max(0.01, collectionTon));
+    const scaled = base * (0.6 + 0.4 * Math.sqrt(ratio));
+    const floor = Math.max(20, Math.round(base * ratio * 0.75));
+    return Math.max(floor, Math.round(scaled));
   }
   return Math.max(20, Math.round(base * 0.6));
 }
@@ -213,6 +229,7 @@ for (const c of COLLECTIONS) {
       variant: m.name,
       kind: "model",
       image: asset(m.image) ?? baseImage,
+      hasOwnImage: Boolean(m.image),
       gradient: cleanGradient(m.gradient),
       tint: RARITY_TINT[markRarity(pct)],
       rarity: markRarity(pct),

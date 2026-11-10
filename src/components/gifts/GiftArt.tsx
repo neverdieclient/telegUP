@@ -87,6 +87,11 @@ export function GiftArt({
     : {};
 
   if (gift.image && !failed) {
+    // A model that has no artwork of its own falls back to the collection
+    // image. Without help every such model inside one collection looks the
+    // same, so we stamp the model name and a rarity tint on top — the
+    // upgraded models then stay recognisably different from each other.
+    const borrowed = gift.kind === "model" && gift.hasOwnImage === false;
     return (
       <div
         className={`group relative grid shrink-0 place-items-center ${rounded} ${className}`}
@@ -111,6 +116,32 @@ export function GiftArt({
               willChange: animated ? "transform" : undefined,
             }}
           />
+          {borrowed && (
+            <>
+              {/* rarity-coloured wash so two borrowed models never read alike */}
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-[inherit]"
+                style={{
+                  background: `radial-gradient(120% 100% at 50% 25%, ${meta.hex}3d, transparent 68%)`,
+                  mixBlendMode: "soft-light",
+                }}
+              />
+              {size >= 34 && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute bottom-0 left-0 right-0 truncate rounded-b-[inherit] px-1 py-[2px] text-center font-display font-black uppercase tracking-wide"
+                  style={{
+                    fontSize: Math.max(7, size * 0.13),
+                    color: "#fff",
+                    textShadow: `0 1px 4px #000, 0 0 10px ${meta.hex}cc`,
+                  }}
+                >
+                  {gift.variant}
+                </span>
+              )}
+            </>
+          )}
         </div>
       </div>
     );
@@ -191,6 +222,17 @@ export function TonIcon({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
       <path d="M4.5 4h15a1 1 0 0 1 .86 1.5l-7.5 13.2a1 1 0 0 1-1.72 0L3.64 5.5A1 1 0 0 1 4.5 4Zm5.1 2L12 10.9 14.4 6h-4.8Z" />
+    </svg>
+  );
+}
+
+export function UpgradeIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+      {/* sparkles: the classic "upgrade" mark, drawn as crisp geometry */}
+      <path d="M12 2.2c.32 0 .6.2.72.5l1.6 3.94 3.94 1.6a.78.78 0 0 1 0 1.44l-3.94 1.6-1.6 3.94a.78.78 0 0 1-1.44 0l-1.6-3.94-3.94-1.6a.78.78 0 0 1 0-1.44l3.94-1.6 1.6-3.94A.78.78 0 0 1 12 2.2Z" />
+      <path d="M5.6 13.6c.2 0 .38.13.45.32l.72 1.78 1.78.72a.5.5 0 0 1 0 .92l-1.78.72-.72 1.78a.5.5 0 0 1-.92 0l-.72-1.78-1.78-.72a.5.5 0 0 1 0-.92l1.78-.72.72-1.78a.5.5 0 0 1 .47-.32Z" />
+      <path d="M18 12.9c.22 0 .42.14.5.34l.6 1.48 1.48.6a.52.52 0 0 1 0 .96l-1.48.6-.6 1.48a.52.52 0 0 1-.96 0l-.6-1.48-1.48-.6a.52.52 0 0 1 0-.96l1.48-.6.6-1.48a.52.52 0 0 1 .46-.34Z" />
     </svg>
   );
 }

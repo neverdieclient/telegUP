@@ -26,8 +26,12 @@ import { randInt } from "../lib/rng";
  */
 const LS_KEY = "telegup:auction:v2";
 
-/** How long a single bid holds the lot before the winner is paid out. */
-const BID_WINDOW_MS = 10 * 60 * 1000;
+/**
+ * How long a single bid holds the lot before the winner is paid out.
+ * The bidder must survive this many minutes without being outbid, after
+ * which the gift is theirs.
+ */
+const BID_WINDOW_MS = 30 * 60 * 1000;
 /** House lots refresh this often. */
 const CYCLE_MS = 5 * 60 * 60 * 1000;
 /** A lot that gets no bid for this long goes back to its owner. */
@@ -364,7 +368,7 @@ export default function Auction() {
       // an earlier local bid on this lot is refunded
       if (lot.top_bid > 0 && lot.top_bidder === ME) addStars(lot.top_bid);
 
-      // first bid opens a 10-minute window; a later bid restarts it
+      // first bid opens a 30-minute window; a later bid restarts it
       const ends = new Date(Date.now() + BID_WINDOW_MS).toISOString();
       const next = readLocal().map((l) =>
         l.id === lot.id
@@ -395,7 +399,7 @@ export default function Auction() {
     toast({
       kind: "gift",
       title: "Ставка принята",
-      message: `${fmt(amount)} ★ · держим 10 минут, потом лот твой`,
+      message: `${fmt(amount)} ★ · держим 30 минут, потом лот твой`,
     });
   };
 
@@ -454,7 +458,7 @@ export default function Auction() {
           <p className="text-[10.5px] font-bold uppercase tracking-[0.2em] text-neon/80">Marketplace</p>
           <h1 className="mt-1 font-display text-3xl font-black tracking-tight">Аукцион</h1>
           <p className="mt-1 text-[12.5px] text-white/35">
-            Ставка держит лот 10 минут · без ставок за 30 минут лот вернётся владельцу
+            Ставка держит лот 30 минут · не перебили — подарок твой · без ставок лот вернётся владельцу
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
@@ -720,7 +724,7 @@ function NewLot({
           itemValue: gift.stars,
           minBid: Number(minBid) || Math.max(1, Math.round(gift.stars * 0.7)),
           buyout: Number(buyout) || null,
-          hours: 24,
+          hours: 1,
         });
         if (res.error) {
           toast({ kind: "error", title: "Не вышло", message: res.error });
@@ -818,7 +822,7 @@ function NewLot({
         {busy ? "Выставляем…" : "Выставить лот"}
       </Button>
       <p className="text-center text-[10px] text-white/20">
-        Лот ждёт первую ставку. После неё начинается 10-минутный отсчёт.
+        Лот ждёт первую ставку. После неё начинается 30-минутный отсчёт.
       </p>
     </section>
   );

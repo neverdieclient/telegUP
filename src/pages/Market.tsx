@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { GIFTS, RARITY_META, RARITY_ORDER, type Gift, type Rarity } from "../data/gifts";
 import { modelOptions } from "../lib/rng";
 import { useGame } from "../store/useGame";
-import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
+import { GiftArt, StarIcon, UpgradeIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
 
 type Filter = "all" | Rarity;
@@ -204,8 +204,9 @@ export default function Market() {
                     className="shrink-0"
                     onClick={() => setDetail(g)}
                     title="Показать улучшенные модели"
+                    icon={<UpgradeIcon className="size-4 text-violet" />}
                   >
-                    ✨
+                    Улучшения
                   </Button>
                   <Button
                     full
