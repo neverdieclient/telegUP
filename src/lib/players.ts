@@ -245,12 +245,12 @@ export async function searchPlayers(query: string, limit = 20): Promise<PlayerRo
 
 /**
  * Send a gift to another player. The local item is already removed from the
- * sender's inventory by the caller; this only writes the online record.
- * Without a backend (or a signed-in account) this is a no-op (local sim).
+ * sender's inventory by the caller; this writes the online record.
  *
- * NOTE: a player's client cannot read another player's `gifts` rows, so this
- * is the *history* only. Gifts handed out by the owner go through
- * `ownerDeliverGift` below, which lands in the recipient's inventory.
+ * Goes through `player_send_gift`, which writes BOTH the `gifts` history row and
+ * a `deliveries` row. That second row is what the recipient's client drains into
+ * their inventory — writing only `gifts` (the old behaviour) meant the gift was
+ * never delivered. Without a backend (or a signed-in account) this is a no-op.
  */
 export async function sendGift(payload: {
   fromId: string;
@@ -263,6 +263,23 @@ export async function sendGift(payload: {
   message?: string;
 }): Promise<{ error?: string }> {
   if (!supabase) return {};
+
+  if (payload.toId) {
+    const { error } = await supabase.rpc("player_send_gift", {
+      target_id: payload.toId,
+      p_gift_id: payload.giftId,
+      p_gift_name: payload.giftName,
+      p_gift_stars: Math.max(0, Math.round(payload.giftStars)),
+      message: payload.message ?? null,
+    });
+    if (!error) return {};
+    // 42883 = function missing (SQL not applied yet): fall through to the
+    // legacy history-only insert so the sender's log still records the send.
+    if (!/42883|does not exist|schema cache/i.test(error.message)) {
+      return { error: error.message };
+    }
+  }
+
   const { error } = await supabase.from("gifts").insert({
     from_id: payload.fromId,
     from_name: payload.fromName,
