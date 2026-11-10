@@ -18,6 +18,13 @@ dist-ssr
 
 # Scratch SQL / local debug queries
 .q*.sql
+
+# Local scrape/debug scratch files
+scripts/_probe.mjs
+probe.txt
+scrape.log
+scrape2.log
+repair.log
 # Videotrailer build artifacts (sources stay tracked, output/frames/renders do not)
 trailer/frames/
 trailer/frames-out/

@@ -220,8 +220,6 @@ async function scrapeCollection(c, index, total) {
   }
 
   const models = parseRows(sectionSlice(html, 0), "model");
-  const backgrounds = parseRows(sectionSlice(html, 1), "background");
-  const symbols = parseRows(sectionSlice(html, 2), "symbol");
   if (!models.length) {
     console.log(`${tag} ✗ skip (no models)`);
     return null;
@@ -248,15 +246,13 @@ async function scrapeCollection(c, index, total) {
     return ok ? { ...base, image: `gifts/models/${folder}/${encodeURIComponent(fileName)}` } : base;
   };
 
-  const [modelOut, bgOut, symOut] = await Promise.all([
-    Promise.all(models.map(localize)),
-    Promise.all(backgrounds.map(localize)),
-    Promise.all(symbols.slice(0, 24).map(localize)),
-  ]);
+  // The game only ships model artwork, so downloading every background and
+  // symbol would add ~10k unused files. Keep them out of the bundle entirely.
+  const [modelOut] = await Promise.all([Promise.all(models.map(localize))]);
+  const bgOut = [];
+  const symOut = [];
 
-  console.log(
-    `${tag} ✓ (${modelOut.length} models / ${bgOut.length} bgs / ${symOut.length} symbols)`,
-  );
+  console.log(`${tag} ✓ (${modelOut.length} models)`);
 
   return {
     slug: c.slug,
