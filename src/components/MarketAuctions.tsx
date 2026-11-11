@@ -12,6 +12,7 @@ import {
   useLiveAuctions,
 } from "../lib/auctions";
 import { placeBid, type AuctionRow } from "../lib/players";
+import { useGiftInbox } from "../lib/useGiftInbox";
 import { onlineEnabled, supabase } from "../lib/supabase";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
@@ -217,6 +218,7 @@ function AuctionSheet({
   const addItem = useGame((s) => s.addItem);
   const toast = useGame((s) => s.toast);
   const onlineUserId = useGame((s) => s.onlineUserId);
+  const { flush: flushStars } = useGiftInbox();
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -254,6 +256,10 @@ function AuctionSheet({
         toast({ kind: "error", title: "Ставка не принята", message: bidError(res.error) });
         return;
       }
+      // the bid really costs stars: only the raise above the held bid is new
+      if (myHold > 0) addStars(myHold);
+      spendStars(Math.max(0, value - myHold));
+      flushStars();
       onDone();
       toast({ kind: "gift", title: "Ставка принята", message: `${fmt(value)} ★ · держим 30 минут` });
       onClose();
@@ -284,6 +290,7 @@ function AuctionSheet({
       // the raise above was over the held bid, so only the difference is new
       if (myHold > 0) addStars(myHold);
       spendStars(Math.max(0, charge - myHold));
+      flushStars();
       if (gift) addItem(gift.id, "market");
       // закрываем лот сами: выкуп не должен ждать, пока истечёт таймер
       if (supabase) await supabase.from("auctions").update({ sold: true }).eq("id", lot.id);

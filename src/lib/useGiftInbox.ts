@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
-import { GIFT_BY_ID, type BadgeId } from "../data/gifts";
+import type { BadgeId } from "../data/gifts";
+import { useGiftIndex } from "./useCatalog";
 import { useGame } from "../store/useGame";
 import { onlineEnabled, supabase } from "./supabase";
 import { claimDelivery, fetchDeliveries, fetchPlayer, pushProfileSafe } from "./players";
@@ -30,8 +31,19 @@ export function useGiftInbox(): { flush: () => void } {
   const adoptServerProfile = useGame((s) => s.adoptServerProfile);
   const setOwnerSyncSeen = useGame((s) => s.setOwnerSyncSeen);
   const toast = useGame((s) => s.toast);
+  /**
+   * The known-item table must include owner-made gifts: an auction win of a
+   * custom gift (or its model) otherwise arrived as unknown id and was thrown
+   * away instead of landing in the inventory.
+   */
+  const GIFT_BY_ID = useGiftIndex();
+  const knownRef = useRef(GIFT_BY_ID);
+  knownRef.current = GIFT_BY_ID;
   /** set from inside the effect so callers can force a sync right away */
   const flushRef = useRef<() => void>(() => {});
+
+  /** ids already handed to the inventory, so a slow `claimDelivery` can't double-add */
+  const claimedRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     if (!onlineEnabled || !supabase || !onlineUserId) return;
@@ -47,7 +59,7 @@ export function useGiftInbox(): { flush: () => void } {
       if (s.cloudLoadedFor !== s.onlineUserId) return;
       if (!s.onlineUserId) return;
       const inventoryValue = s.inventory.reduce(
-        (a, i) => a + (GIFT_BY_ID[i.giftId]?.stars ?? 0),
+        (a, i) => a + (knownRef.current[i.giftId]?.stars ?? 0),
         0,
       );
       void pushProfileSafe({
@@ -100,15 +112,21 @@ export function useGiftInbox(): { flush: () => void } {
         // ---- 2. drain deliveries into the inventory
         const pending = await fetchDeliveries();
         if (dead || !pending.length) return;
+        let added = 0;
         for (const d of pending) {
-          // only accept gifts that exist in this build, so a stale row can
-          // never poison the inventory with an unknown id
-          if (!GIFT_BY_ID[d.gift_id]) {
+          if (claimedRef.current.has(d.id)) continue;
+          // only accept gifts this build knows — built-in *or* owner-made.
+          // An unknown id is still claimed, otherwise it would block the
+          // queue forever, but it is never dropped silently into nothing.
+          if (!knownRef.current[d.gift_id]) {
+            claimedRef.current.add(d.id);
             void claimDelivery(d.id);
             continue;
           }
+          claimedRef.current.add(d.id);
           useGame.getState().addItem(d.gift_id, "admin");
           void claimDelivery(d.id);
+          added += 1;
           toast({
             kind: "gift",
             title: "Подарок получен",
@@ -117,7 +135,7 @@ export function useGiftInbox(): { flush: () => void } {
         }
         // the drained gifts must reach the cloud, otherwise the next device
         // (or a wipe of localStorage) loses them again
-        flush();
+        if (added) flush();
       } catch {
         /* offline blip — retry on the next tick */
       } finally {
@@ -137,7 +155,7 @@ export function useGiftInbox(): { flush: () => void } {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [onlineUserId, adoptServerProfile, toast]);
+  }, [onlineUserId, adoptServerProfile, toast, GIFT_BY_ID]);
 
   const flush = useCallback(() => flushRef.current(), []);
   return { flush };
