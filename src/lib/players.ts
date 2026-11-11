@@ -488,6 +488,15 @@ export type AuctionRow = {
   cancelled: boolean;
   ends_at: string;
   created_at: string;
+  /** 'house' — лот выставил владелец из админки; 'player' — обычный игрок */
+  source?: "player" | "house";
+  /**
+   * When the lot opens. `null` (or a past date) means it is live; a future
+   * date means it is an upcoming auction: visible, «скоро», bids disabled.
+   */
+  starts_at?: string | null;
+  /** optional caption shown above the upcoming lot */
+  lot_label?: string | null;
 };
 
 export type BidRow = {
@@ -574,6 +583,77 @@ export async function closeAuction(auctionId: number): Promise<{ error?: string 
   if (!supabase) return { error: "Онлайн не подключён" };
   const { error } = await supabase.from("auctions").update({ sold: true }).eq("id", auctionId);
   return error ? { error: error.message } : {};
+}
+
+/* --------------------------------------------------- owner (house) auctions */
+
+/** Owner-only: put any catalogue gift on the block. */
+export async function ownerCreateAuction(lot: {
+  itemId: string;
+  itemName: string;
+  itemKind?: AuctionKind;
+  itemValue: number;
+  minBid: number;
+  buyout: number | null;
+  /** how long the lot lives after it opens */
+  minutes: number;
+  /** how long until it opens; 0 — right away */
+  startInMinutes?: number;
+  label?: string | null;
+}): Promise<{ error?: string; id?: number }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { data, error } = await supabase.rpc("owner_create_auction", {
+    p_item_id: lot.itemId,
+    p_item_name: lot.itemName,
+    p_item_kind: lot.itemKind ?? "gift",
+    p_item_value: Math.max(0, Math.round(lot.itemValue)),
+    p_min_bid: Math.max(1, Math.round(lot.minBid)),
+    p_buyout: lot.buyout && lot.buyout > 0 ? Math.round(lot.buyout) : null,
+    p_minutes: Math.max(1, Math.round(lot.minutes)),
+    p_start_in: Math.max(0, Math.round(lot.startInMinutes ?? 0)),
+    p_label: lot.label?.trim() || null,
+  });
+  if (error) return { error: error.message };
+  return { id: Number(data) };
+}
+
+/** Owner-only: pull a lot off the board. */
+export async function ownerCancelAuction(auctionId: number): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_cancel_auction", { p_lot: auctionId });
+  return error ? { error: error.message } : {};
+}
+
+/** Owner-only: re-price an open lot and/or move its window. */
+export async function ownerUpdateAuction(
+  auctionId: number,
+  patch: { minBid: number; buyout: number | null; minutes: number; startInMinutes?: number | null },
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_update_auction", {
+    p_lot: auctionId,
+    p_min_bid: Math.max(1, Math.round(patch.minBid)),
+    p_buyout: patch.buyout && patch.buyout > 0 ? Math.round(patch.buyout) : null,
+    p_minutes: Math.max(1, Math.round(patch.minutes)),
+    p_start_in:
+      patch.startInMinutes === undefined || patch.startInMinutes === null
+        ? null
+        : Math.max(0, Math.round(patch.startInMinutes)),
+  });
+  return error ? { error: error.message } : {};
+}
+
+/** Every live lot (open and upcoming), plus finished house lots for the panel. */
+export async function fetchOwnerAuctions(): Promise<AuctionRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("auctions")
+    .select("*")
+    .eq("source", "house")
+    .order("created_at", { ascending: false })
+    .limit(80);
+  if (error || !data) return [];
+  return data as AuctionRow[];
 }
 
 /* ------------------------------------------------- bans / login tracking */

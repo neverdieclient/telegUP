@@ -5,6 +5,9 @@ import { isPurchasable } from "../data/customGifts";
 import { modelOptions } from "../lib/rng";
 import { useAllGifts, useCustomGiftRows } from "../lib/useCatalog";
 import { useIsOwnerEmail } from "../lib/useIsOwnerEmail";
+import { MarketAuctions } from "../components/MarketAuctions";
+import { auctionOpensIn, useLiveAuctions } from "../lib/auctions";
+import type { AuctionRow } from "../lib/players";
 import { useBoost } from "../lib/starBoost";
 import { useGame } from "../store/useGame";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
@@ -155,6 +158,19 @@ export default function Market() {
   }, [customRows, owner]);
 
   const boost = useBoost();
+  const auctions = useLiveAuctions();
+
+  /** auction lots, keyed by gift id — cards get a «скоро» / «аукцион» tag */
+  const lotByGift = useMemo(() => {
+    const map = new Map<string, AuctionRow>();
+    for (const lot of auctions) {
+      if (lot.sold || lot.cancelled) continue;
+      const prev = map.get(lot.item_id);
+      const opens = auctionOpensIn(lot);
+      if (!prev || opens > 0) map.set(lot.item_id, lot);
+    }
+    return map;
+  }, [auctions]);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<"price" | "priceDesc" | "name">("price");
@@ -215,6 +231,9 @@ export default function Market() {
           <span className="text-[15px] font-extrabold tabular-nums">{stars.toLocaleString("ru-RU")}</span>
         </div>
       </header>
+
+      {/* auction lots the owner schedules from the admin panel */}
+      <MarketAuctions />
 
       {/* «двойные звёзды» — live, owner-switched payout boost */}
       <AnimatePresence>
@@ -314,6 +333,8 @@ export default function Market() {
           const meta = RARITY_META[g.rarity];
             const locked = lockedSlugs.has(g.slug);
             const canBuy = !locked && stars >= g.stars;
+            const lot = lotByGift.get(g.id);
+            const lotUpcoming = lot ? auctionOpensIn(lot) > 0 : false;
           return (
             <motion.article
               key={g.id}
@@ -337,9 +358,20 @@ export default function Market() {
                 <span className={`absolute left-2 top-2 rounded-md border px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wider ${meta.chip}`}>
                   {meta.label}
                 </span>
-                {g.ton > 0 && (
+                {g.ton > 0 && !lot && (
                   <span className="absolute right-2 top-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[8.5px] font-bold tabular-nums text-white/55 backdrop-blur">
                     {g.ton.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} TON
+                  </span>
+                )}
+                {lot && (
+                  <span
+                    className={`absolute right-2 top-2 rounded-md px-1.5 py-0.5 text-[8.5px] font-black uppercase tracking-wider ${
+                      lotUpcoming
+                        ? "animate-pulse bg-violet text-white shadow-[0_8px_24px_-8px_rgba(139,92,246,0.9)]"
+                        : "border border-neon/40 bg-neon/15 text-neon"
+                    }`}
+                  >
+                    {lotUpcoming ? "скоро" : "аукцион"}
                   </span>
                 )}
               </button>
@@ -475,6 +507,11 @@ export default function Market() {
                             <GiftArt gift={m} size={54} rounded="rounded-lg" />
                           </div>
                           <p className="mt-1.5 w-full truncate text-center text-[9.5px] font-bold text-white/70">{m.variant}</p>
+                          {lotByGift.has(m.id) && (
+                            <p className="text-[8px] font-black uppercase tracking-wider text-violet">
+                              {auctionOpensIn(lotByGift.get(m.id)!) > 0 ? "скоро" : "аукцион"}
+                            </p>
+                          )}
                           <p className="flex items-center gap-0.5 text-[10.5px] font-extrabold tabular-nums text-neon/90">
                             {m.stars.toLocaleString("ru-RU")}
                             <StarIcon className="size-2.5" />

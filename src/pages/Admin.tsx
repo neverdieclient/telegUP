@@ -5,6 +5,7 @@ import { BADGES, BADGE_BY_ID, DISCLAIMER, GIFT_BY_ID, RARITY_META, type BadgeId 
 import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
 import { CustomGiftEditor } from "./admin/CustomGiftEditor";
 import { BoostPanel } from "./admin/BoostPanel";
+import { AuctionAdmin } from "./admin/AuctionAdmin";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
 import { Button } from "../components/ui/Button";
@@ -1217,6 +1218,15 @@ export default function Admin() {
           badge="custom"
         >
           <CustomGiftEditor />
+        </Panel>
+
+        {/* ---------------- house auction ---------------- */}
+        <Panel
+          title="Аукцион"
+          desc="Выставь любой подарок по названию: старт, выкуп и сколько идёт. Можно запланировать — тогда лот виден всем с пометкой «скоро» и закрыт до выбранного времени."
+          badge="новое"
+        >
+          <AuctionAdmin />
         </Panel>
 
         {/* ---------------- star boost ---------------- */}
