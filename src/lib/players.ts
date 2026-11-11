@@ -510,14 +510,30 @@ export type BidRow = {
 
 /** All lots that are still on the board, soonest-ending first. */
 export async function fetchAuctions(): Promise<AuctionRow[]> {
+  return fetchLotRows();
+}
+
+/**
+ * @param houseOnly   — только лоты дома (вкладка «Аукцион» в маркете)
+ * @param playerOnly  — только лоты игроков (старая вкладка «Аукцион»)
+ *
+ * Лоты дома и лоты игроков — два разных мира: один живёт в маркете, другой в
+ * промо-вкладке, и они не должны видеть лоты друг друга.
+ */
+export async function fetchLotRows(
+  opts: { houseOnly?: boolean; playerOnly?: boolean } = {},
+): Promise<AuctionRow[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase
+  let q = supabase
     .from("auctions")
     .select("*")
     .eq("sold", false)
     .eq("cancelled", false)
     .order("ends_at", { ascending: true })
     .limit(200);
+  if (opts.houseOnly) q = q.eq("source", "house");
+  if (opts.playerOnly) q = q.or("source.is.null,source.eq.player");
+  const { data, error } = await q;
   if (error || !data) return [];
   // a lot past its clock is closed on the server, but the board must never
   // show it even for the one poll until that lands

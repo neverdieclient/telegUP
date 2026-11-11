@@ -9,7 +9,7 @@ import { useAuth } from "../lib/players";
 import {
   cancelAuction,
   closeAuction,
-  fetchAuctions,
+  fetchLotRows,
   listAuction,
   placeBid,
   type AuctionRow,
@@ -231,7 +231,7 @@ export default function Auction() {
     setLoading(true);
     try {
       if (onlineEnabled) {
-        const rows = (await fetchAuctions()) as LocalLot[];
+        const rows = (await fetchLotRows({ playerOnly: true })) as LocalLot[];
         setLots(rows.map((r) => ({ ...r, bids: [] })));
       } else {
         setLots(ensureLocalLots());

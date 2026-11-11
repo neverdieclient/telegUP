@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchAuctions, settleAuctions, type AuctionRow } from "./players";
+import { fetchLotRows, settleAuctions, type AuctionRow } from "./players";
 import { onlineEnabled } from "./supabase";
 
 /**
- * Lots currently on the block — including the house auctions the owner
- * schedules from the admin panel. Upcoming lots (`starts_at` in the future)
- * are returned too: the market shows them with a «скоро» badge. Lots whose
- * clock ran out are dropped right away and settled on the server, so a
- * finished lot never lingers on the board.
+ * Lots inside the market. Only the house orders (`source = 'house'`) belong
+ * here — player-to-player lots stay on the old auction tab, so a lot created
+ * in the admin panel never shows up in two places at once.
  */
 export function useLiveAuctions(pollMs = 20_000): {
   lots: AuctionRow[];
@@ -21,7 +19,7 @@ export function useLiveAuctions(pollMs = 20_000): {
   const settled = useRef(new Set<number>());
 
   const load = useCallback(async () => {
-    const next = await fetchAuctions();
+    const next = await fetchLotRows({ houseOnly: true });
     setRows(next);
 
     // a lot past its end must leave the board; the server closes it so the
@@ -39,7 +37,7 @@ export function useLiveAuctions(pollMs = 20_000): {
     if (!closed) return;
     const count = await settleAuctions();
     if (count > 0) {
-      const fresh = await fetchAuctions();
+      const fresh = await fetchLotRows({ houseOnly: true });
       setRows(fresh);
       setClosedAt(Date.now());
     }
