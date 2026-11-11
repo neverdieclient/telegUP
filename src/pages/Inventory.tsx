@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { BADGE_BY_ID, RARITY_META, RARITY_ORDER, SHOP_USERNAMES, type Gift, type Rarity } from "../data/gifts";
 import { useGiftIndex } from "../lib/useCatalog";
-import { useGame } from "../store/useGame";
+import { MAX_PINNED, useGame } from "../store/useGame";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
 import { UsernameLootbox } from "../components/gifts/UsernameLootbox";
 import { Button } from "../components/ui/Button";
@@ -13,6 +13,16 @@ import { onlineEnabled } from "../lib/supabase";
 
 type Filter = "all" | Rarity;
 type Sort = "new" | "value" | "name";
+
+/** Telegram-style pin, used on the cards and the pinned strip. */
+function PinIcon({ className = "size-3.5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M12 17v5" />
+      <path d="M9 10.8V4h6v6.8l2.6 3.2H6.4L9 10.8Z" />
+    </svg>
+  );
+}
 
 const SOURCE_LABEL: Record<string, string> = {
   case: "кейс",
@@ -35,6 +45,7 @@ export default function Inventory() {
   const GIFT_BY_ID = useGiftIndex();
   const sellItem = useGame((s) => s.sellItem);
   const sellAll = useGame((s) => s.sellAll);
+  const togglePin = useGame((s) => s.togglePin);
   const giftItem = useGame((s) => s.giftItem);
   const upgradeItemModel = useGame((s) => s.upgradeItemModel);
   const loseItemOnUpgrade = useGame((s) => s.loseItemOnUpgrade);
@@ -81,7 +92,8 @@ export default function Inventory() {
       if (sort === "value") return GIFT_BY_ID[b.giftId].stars - GIFT_BY_ID[a.giftId].stars;
       return GIFT_BY_ID[a.giftId].variant.localeCompare(GIFT_BY_ID[b.giftId].variant);
     });
-    return out;
+    // pinned gifts float above the rest, like Telegram's pinned gifts
+    return [...out].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
   }, [inventory, filter, sort]);
 
   const totalValue = useMemo(
@@ -100,6 +112,13 @@ export default function Inventory() {
 
   const active = selected ? inventory.find((i) => i.id === selected) ?? null : null;
   const activeGift = active ? GIFT_BY_ID[active.giftId] ?? null : null;
+  const pinned = useMemo(
+    () =>
+      inventory
+        .filter((i) => i.pinned && GIFT_BY_ID[i.giftId])
+        .sort((a, b) => b.acquiredAt - a.acquiredAt),
+    [inventory],
+  );
 
   /** Every nicer model of the selected gift, cheapest first. */
   const targets = useMemo(() => (activeGift ? modelTargets(activeGift) : []), [activeGift]);
@@ -198,6 +217,26 @@ export default function Inventory() {
       kind: "success",
       title: `Продано ${count} шт.`,
       message: `+${stars.toLocaleString("ru-RU")} ★`,
+    });
+  };
+
+  /** Pin/unpin, warning when the Telegram-style cap of three is reached. */
+  const doTogglePin = (id: string) => {
+    const item = inventory.find((i) => i.id === id);
+    if (!item) return;
+    if (!item.pinned && pinned.length >= MAX_PINNED) {
+      toast({
+        kind: "info",
+        title: "Закреплено уже 3",
+        message: `Больше ${MAX_PINNED} не закрепить — открепи один`,
+      });
+      return;
+    }
+    const nowPinned = togglePin(id);
+    toast({
+      kind: "success",
+      title: nowPinned ? "Подарок закреплён" : "Подарок откреплён",
+      message: nowPinned ? "Закреплённые висят сверху" : undefined,
     });
   };
 
@@ -359,6 +398,61 @@ export default function Inventory() {
         </section>
       )}
 
+      {/* pinned gifts — kept at the top like Telegram's pinned gifts */}
+      {pinned.length > 0 && (
+        <section className="rounded-3xl border border-neon/20 bg-neon/[0.04] p-3">
+          <div className="mb-2 flex items-end justify-between">
+            <h2 className="flex items-center gap-1.5 text-[12px] font-extrabold tracking-tight text-neon">
+              <PinIcon className="size-3.5" /> Закреплённые
+            </h2>
+            <span className="text-[10.5px] text-white/25">
+              {pinned.length} / {MAX_PINNED}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {pinned.map((item) => {
+              const gift = GIFT_BY_ID[item.giftId];
+              const meta = RARITY_META[gift.rarity];
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setSelected(item.id)}
+                  className={`group relative flex items-center gap-2.5 overflow-hidden rounded-2xl border bg-black/30 p-2 text-left transition-colors hover:border-white/25 ${meta.ring}`}
+                >
+                  <GiftArt gift={gift} size={40} rounded="rounded-xl" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11.5px] font-extrabold">{gift.name}</p>
+                    <p className="flex items-center gap-0.5 text-[11px] font-bold tabular-nums text-neon/90">
+                      {gift.stars.toLocaleString("ru-RU")}
+                      <StarIcon className="size-2.5" />
+                    </p>
+                  </div>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title="Открепить"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePin(item.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        togglePin(item.id);
+                      }
+                    }}
+                    className="grid size-6 shrink-0 place-items-center rounded-full bg-neon/20 text-neon hover:bg-neon/30"
+                  >
+                    <PinIcon className="size-3" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* filters */}
       <div className="flex flex-col gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
@@ -440,6 +534,30 @@ export default function Inventory() {
                   </span>
                   <span className="absolute right-2 top-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[8.5px] font-bold text-white/45 backdrop-blur">
                     {SOURCE_LABEL[item.source] ?? item.source}
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title={item.pinned ? "Открепить" : "Закрепить"}
+                    aria-label={item.pinned ? "Открепить подарок" : "Закрепить подарок"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      doTogglePin(item.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        doTogglePin(item.id);
+                      }
+                    }}
+                    className={`absolute bottom-2 right-2 grid size-6 place-items-center rounded-full border backdrop-blur transition-colors ${
+                      item.pinned
+                        ? "border-neon/50 bg-neon/20 text-neon"
+                        : "border-white/10 bg-black/50 text-white/35 opacity-0 hover:text-white focus:opacity-100 group-hover:opacity-100"
+                    }`}
+                  >
+                    <PinIcon className={item.pinned ? "size-3" : "size-3 -rotate-45"} />
                   </span>
                 </div>
                 <div className="p-2.5">
@@ -526,6 +644,16 @@ export default function Inventory() {
                     Подарить
                   </Button>
                 </div>
+
+                <Button
+                  full
+                  variant={active.pinned ? "violet" : "ghost"}
+                  className="mt-2"
+                  onClick={() => doTogglePin(active.id)}
+                  icon={<PinIcon className="size-3.5" />}
+                >
+                  {active.pinned ? "Открепить" : "Закрепить"}
+                </Button>
 
                 {targets.length > 0 ? (
                   <Button

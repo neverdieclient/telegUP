@@ -46,7 +46,15 @@ export type InventoryItem = {
   acquiredAt: number;
   /** where it came from, for the item badge */
   source: "case" | "market" | "upgrade" | "free" | "admin" | "pvp" | "mines" | "crash" | "dice" | "wheel" | "coinflip" | "tower" | "craft";
+  /**
+   * Pinned to the top of the inventory, like Telegram's pinned gifts.
+   * Optional so items stored before pinning existed still load.
+   */
+  pinned?: boolean;
 };
+
+/** Telegram shows a short row of pinned gifts; three fits our grid. */
+export const MAX_PINNED = 3;
 
 /** Outcome of one crafting attempt. */
 export type CraftResult =
@@ -176,6 +184,8 @@ type State = {
   removeItem: (instanceId: string) => boolean;
   sellItem: (instanceId: string) => number;
   sellAll: (filter?: (giftId: string) => boolean) => { count: number; stars: number };
+  /** Pin/unpin a gift; returns the new pinned state (false when the cap is hit). */
+  togglePin: (instanceId: string) => boolean;
   giftItem: (instanceId: string) => void;
   /**
    * Morph one inventory item into a better model of the same gift.
@@ -562,6 +572,17 @@ export const useGame = create<State>()(
           stats: { ...s.stats, giftsSold: s.stats.giftsSold + count },
         }));
         return { count, stars };
+      },
+
+      togglePin: (instanceId) => {
+        const item = get().inventory.find((i) => i.id === instanceId);
+        if (!item) return false;
+        if (!item.pinned && get().inventory.filter((i) => i.pinned).length >= MAX_PINNED) return false;
+        const next = !item.pinned;
+        set((s) => ({
+          inventory: s.inventory.map((i) => (i.id === instanceId ? { ...i, pinned: next } : i)),
+        }));
+        return next;
       },
 
       giftItem: (instanceId) => {
