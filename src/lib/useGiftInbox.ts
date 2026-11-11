@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { GIFT_BY_ID, type BadgeId } from "../data/gifts";
 import { useGame } from "../store/useGame";
 import { onlineEnabled, supabase } from "./supabase";
@@ -25,11 +25,13 @@ import { claimDelivery, fetchDeliveries, fetchPlayer, pushProfileSafe } from "./
 
 const POLL_MS = 20_000;
 
-export function useGiftInbox() {
+export function useGiftInbox(): { flush: () => void } {
   const onlineUserId = useGame((s) => s.onlineUserId);
   const adoptServerProfile = useGame((s) => s.adoptServerProfile);
   const setOwnerSyncSeen = useGame((s) => s.setOwnerSyncSeen);
   const toast = useGame((s) => s.toast);
+  /** set from inside the effect so callers can force a sync right away */
+  const flushRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!onlineEnabled || !supabase || !onlineUserId) return;
@@ -60,6 +62,7 @@ export function useGiftInbox() {
         joinedAt: s.joinedAt,
       });
     };
+    flushRef.current = flush;
 
     const tick = async () => {
       if (dead || busy) return;
@@ -135,4 +138,7 @@ export function useGiftInbox() {
       document.removeEventListener("visibilitychange", onFocus);
     };
   }, [onlineUserId, adoptServerProfile, toast]);
+
+  const flush = useCallback(() => flushRef.current(), []);
+  return { flush };
 }

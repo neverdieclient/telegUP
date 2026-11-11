@@ -1,31 +1,69 @@
-import { useEffect, useState } from "react";
-import { fetchAuctions, type AuctionRow } from "./players";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchAuctions, settleAuctions, type AuctionRow } from "./players";
 import { onlineEnabled } from "./supabase";
 
 /**
  * Lots currently on the block — including the house auctions the owner
  * schedules from the admin panel. Upcoming lots (`starts_at` in the future)
- * are returned too: the market shows them with a «скоро» badge.
+ * are returned too: the market shows them with a «скоро» badge. Lots whose
+ * clock ran out are dropped right away and settled on the server, so a
+ * finished lot never lingers on the board.
  */
-export function useLiveAuctions(pollMs = 20_000): AuctionRow[] {
+export function useLiveAuctions(pollMs = 20_000): {
+  lots: AuctionRow[];
+  /** re-fetch now, e.g. after a bid or a buyout */
+  refresh: () => void;
+  /** a lot just closed — fired once per lot so the page can refetch its data */
+  closedAt: number;
+} {
   const [rows, setRows] = useState<AuctionRow[]>([]);
+  const [closedAt, setClosedAt] = useState(0);
+  const settled = useRef(new Set<number>());
+
+  const load = useCallback(async () => {
+    const next = await fetchAuctions();
+    setRows(next);
+
+    // a lot past its end must leave the board; the server closes it so the
+    // winner really gets the gift and the seller really gets paid
+    const due = next.filter(
+      (l) => !l.sold && !l.cancelled && new Date(l.ends_at).getTime() <= Date.now(),
+    );
+    if (!due.length) return;
+    let closed = 0;
+    for (const lot of due) {
+      if (settled.current.has(lot.id)) continue;
+      settled.current.add(lot.id);
+      closed += 1;
+    }
+    if (!closed) return;
+    const count = await settleAuctions();
+    if (count > 0) {
+      const fresh = await fetchAuctions();
+      setRows(fresh);
+      setClosedAt(Date.now());
+    }
+  }, []);
 
   useEffect(() => {
     if (!onlineEnabled) return;
     let alive = true;
-    const load = async () => {
-      const next = await fetchAuctions();
-      if (alive) setRows(next);
+    const tick = async () => {
+      if (alive) await load();
     };
-    void load();
-    const t = setInterval(() => void load(), pollMs);
+    void tick();
+    const t = setInterval(() => void tick(), pollMs);
     return () => {
       alive = false;
       clearInterval(t);
     };
-  }, [pollMs]);
+  }, [load, pollMs]);
 
-  return rows;
+  const refresh = useCallback(() => {
+    void load();
+  }, [load]);
+
+  return { lots: rows, refresh, closedAt };
 }
 
 /** Milliseconds until the lot opens; 0 for lots that are already live. */
@@ -37,6 +75,12 @@ export function auctionOpensIn(lot: AuctionRow, now = Date.now()): number {
 /** Milliseconds until the lot closes. Upcoming lots count from their opening. */
 export function auctionClosesIn(lot: AuctionRow, now = Date.now()): number {
   return Math.max(0, new Date(lot.ends_at).getTime() - now);
+}
+
+/** Still on the board: not sold, not cancelled and not past its clock. */
+export function isLotLive(lot: AuctionRow, now = Date.now()): boolean {
+  if (lot.sold || lot.cancelled) return false;
+  return auctionClosesIn(lot, now) > 0;
 }
 
 /** Next bid that will be accepted, or the starting price when nobody bid yet. */

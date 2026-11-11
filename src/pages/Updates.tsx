@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CHANGELOG, TAG_META, type ChangelogRelease } from "../data/changelog";
+import { CHANGELOG, TAG_META, type ChangelogEntry, type ChangelogRelease } from "../data/changelog";
+import { GIFT_BY_ID } from "../data/gifts";
 import { CheckMark } from "../components/ui/CheckMark";
+import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
 import { useGame } from "../store/useGame";
 
@@ -12,81 +14,103 @@ import { useGame } from "../store/useGame";
  *
  * The slideshow is pure DOM + framer-motion (no video file needed), so it
  * stays crisp on any screen and needs no extra hosting.
+ *
+ * Как устроен выпуск 1.5: вместо одной карточки на релиз собирается лента
+ * сторис — обложка, кадр на каждую фишку и финальный «канал» с кнопкой.
+ * Кадры листаются свайпом, шкала сверху — как у сторис в телеге/тиктоке.
  */
 
-const SLIDE_MS = 3400;
+const SLIDE_MS = 3800;
+/** how many entries become their own story frame before the rest are merged */
+const MAX_STORY_ENTRIES = 4;
 
-type Slide = { release: ChangelogRelease; index: number; total: number };
+type Frame =
+  | { kind: "cover"; release: ChangelogRelease }
+  | { kind: "feature"; release: ChangelogRelease; entry: ChangelogEntry; index: number }
+  | { kind: "more"; release: ChangelogRelease; entries: ChangelogEntry[] }
+  | { kind: "channel"; release: ChangelogRelease };
 
-function releaseToSlides(): Slide[] {
-  return CHANGELOG.map((release, index) => ({
-    release,
-    index,
-    total: CHANGELOG.length,
-  }));
+function releaseToFrames(release: ChangelogRelease): Frame[] {
+  const head = release.entries.slice(0, MAX_STORY_ENTRIES);
+  const tail = release.entries.slice(MAX_STORY_ENTRIES);
+  const frames: Frame[] = [{ kind: "cover", release }];
+  head.forEach((entry, index) => frames.push({ kind: "feature", release, entry, index }));
+  if (tail.length) frames.push({ kind: "more", release, entries: tail });
+  frames.push({ kind: "channel", release });
+  return frames;
 }
 
-/* ----------------------------------------------------------------- slides */
+const ACCENTS = ["#a3ff12", "#b45cff", "#3b9dff", "#ff8f3d"];
+const accentOf = (i: number) => ACCENTS[i % ACCENTS.length];
 
-function SlideCard({ slide, active }: { slide: Slide; active: boolean }) {
-  const { release, index, total } = slide;
-  const [entryIdx, setEntryIdx] = useState(0);
+/* ------------------------------------------------------------- backdrop */
 
-  // cycle through the entries so the card keeps moving while it is on screen
-  useEffect(() => {
-    if (!active) return;
-    setEntryIdx(0);
-    const per = Math.max(900, Math.floor(SLIDE_MS / Math.max(release.entries.length, 1)));
-    const timer = window.setInterval(() => {
-      setEntryIdx((i) => (i + 1) % release.entries.length);
-    }, per);
-    return () => window.clearInterval(timer);
-  }, [active, release.entries.length]);
-
-  const entry = release.entries[entryIdx];
-  const tag = TAG_META[entry.tag];
-
+function Backdrop({ accent }: { accent: string }) {
   return (
-    <div className="relative flex h-full w-full flex-col justify-end overflow-hidden">
-      {/* animated gradient backdrop */}
+    <>
       <motion.div
         className="absolute inset-0"
         animate={{
           background: [
-            "radial-gradient(120% 80% at 20% 0%, #4c1d95 0%, #0a0a0f 60%)",
-            "radial-gradient(120% 80% at 80% 20%, #1e3a8a 0%, #0a0a0f 60%)",
-            "radial-gradient(120% 80% at 40% 100%, #14532d 0%, #0a0a0f 60%)",
-            "radial-gradient(120% 80% at 20% 0%, #4c1d95 0%, #0a0a0f 60%)",
+            `radial-gradient(120% 80% at 20% 0%, ${accent}33 0%, #08080c 62%)`,
+            `radial-gradient(120% 80% at 80% 25%, #b45cff40 0%, #08080c 62%)`,
+            `radial-gradient(120% 85% at 40% 100%, #3b9dff38 0%, #08080c 62%)`,
+            `radial-gradient(120% 80% at 20% 0%, ${accent}33 0%, #08080c 62%)`,
           ],
         }}
-        transition={{ duration: 16, repeat: Infinity, ease: "linear" }}
+        transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
       />
-
-      {/* drifting orbs */}
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}
           className="pointer-events-none absolute rounded-full blur-[70px]"
           style={{
-            width: 180 + i * 60,
-            height: 180 + i * 60,
-            left: `${18 + i * 30}%`,
-            top: `${10 + i * 22}%`,
-            background: ["#8b5cf6", "#a3ff12", "#3b9dff"][i],
-            opacity: 0.18,
+            width: 170 + i * 70,
+            height: 170 + i * 70,
+            left: `${10 + i * 30}%`,
+            top: `${8 + i * 24}%`,
+            background: ["#8b5cf6", accent, "#3b9dff"][i],
+            opacity: 0.16,
           }}
-          animate={{ x: [0, 30, -20, 0], y: [0, -24, 18, 0], scale: [1, 1.12, 0.94, 1] }}
+          animate={{ x: [0, 34, -22, 0], y: [0, -26, 20, 0], scale: [1, 1.14, 0.92, 1] }}
           transition={{ duration: 12 + i * 4, repeat: Infinity, ease: "easeInOut" }}
         />
       ))}
+      {/* film grain: a cheap feel of texture, still just one div */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.05] mix-blend-overlay"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.6'/></svg>\")",
+        }}
+      />
+    </>
+  );
+}
 
-      <div className="relative p-6 pb-16">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, type: "spring", stiffness: 220, damping: 26 }}
-          className="flex items-center gap-2"
-        >
+/* ---------------------------------------------------------------- frames */
+
+function FrameShell({
+  release,
+  children,
+  accent,
+  watermark = true,
+}: {
+  release: ChangelogRelease;
+  children: React.ReactNode;
+  accent: string;
+  watermark?: boolean;
+}) {
+  return (
+    <div className="relative flex h-full w-full flex-col justify-end overflow-hidden">
+      <Backdrop accent={accent} />
+      {/* a big faded version of the release number — like a cover title */}
+      <span className="pointer-events-none absolute right-2 top-2 font-display text-[120px] font-black leading-none text-white/[0.04]">
+        {release.version.replace(".", "")}
+      </span>
+
+      <div className="relative flex h-full flex-col p-6 pb-20">
+        <div className="flex items-center gap-2">
           <span className="rounded-lg bg-white/10 px-2 py-1 text-[10.5px] font-black tracking-wider text-white/80">
             v{release.version}
           </span>
@@ -94,135 +118,322 @@ function SlideCard({ slide, active }: { slide: Slide; active: boolean }) {
             telegUP
             <CheckMark kind="major" size={12} />
           </span>
-        </motion.div>
-
-        <motion.h2
-          key={release.version + "-title"}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22, type: "spring", stiffness: 200, damping: 24 }}
-          className="mt-2 font-display text-[26px] font-black leading-tight tracking-tight"
-        >
-          {release.title}
-        </motion.h2>
-
-        <motion.p
-          className="mt-1.5 max-w-[34ch] text-[12.5px] leading-relaxed text-white/50"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.35 }}
-        >
-          {release.summary}
-        </motion.p>
-
-        {/* rotating highlight */}
-        <div className="mt-5 min-h-[76px]">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={entryIdx}
-              initial={{ opacity: 0, y: 18, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, y: -18, filter: "blur(6px)" }}
-              transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-              className="rounded-2xl border border-white/10 bg-black/35 p-3.5 backdrop-blur-md"
-            >
-              <span
-                className="rounded-md px-1.5 py-0.5 text-[9.5px] font-black uppercase tracking-wider"
-                style={{ background: `${tag.color}22`, color: tag.color }}
-              >
-                {tag.label}
-              </span>
-              <p className="mt-2 text-[13.5px] font-semibold leading-snug text-white/90">
-                {entry.text}
-              </p>
-            </motion.div>
-          </AnimatePresence>
         </div>
-
-        {/* progress dots */}
-        <div className="mt-4 flex gap-1">
-          {release.entries.map((_, i) => (
-            <span
-              key={i}
-              className={`h-1 flex-1 rounded-full transition-colors duration-300 ${
-                i === entryIdx ? "bg-white/80" : "bg-white/15"
-              }`}
-            />
-          ))}
-        </div>
-
-        <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/25">
-          {index + 1} / {total}
-        </p>
+        <div className="flex-1" />
+        {children}
+        {watermark && (
+          <p className="mt-5 text-[9.5px] font-bold uppercase tracking-[0.18em] text-white/20">
+            свайп ↑↓ · тап — пауза
+          </p>
+        )}
       </div>
     </div>
   );
 }
 
-function Slideshow({ onClose }: { onClose: () => void }) {
-  const slides = useMemo(releaseToSlides, []);
-  const [current, setCurrent] = useState(0);
+function CoverFrame({ release }: { release: ChangelogRelease }) {
+  return (
+    <FrameShell release={release} accent={accentOf(0)}>
+      <motion.span
+        initial={{ opacity: 0, scale: 0.6, rotate: -12 }}
+        animate={{ opacity: 1, scale: 1, rotate: 0 }}
+        transition={{ type: "spring", stiffness: 200, damping: 18 }}
+        className="mb-3 inline-grid size-11 place-items-center rounded-2xl bg-neon text-[18px] font-black text-black shadow-[0_14px_36px_-14px_rgba(163,255,18,0.9)]"
+      >
+        ★
+      </motion.span>
+      <motion.p
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.06 }}
+        className="text-[11px] font-black uppercase tracking-[0.22em] text-neon/90"
+      >
+        {release.date}
+      </motion.p>
+      <motion.h2
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1, type: "spring", stiffness: 190, damping: 22 }}
+        className="mt-2 font-display text-[34px] font-black leading-[1.03] tracking-tight"
+      >
+        {release.title}
+      </motion.h2>
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.28 }}
+        className="mt-3 max-w-[32ch] text-[13px] leading-relaxed text-white/55"
+      >
+        {release.summary}
+      </motion.p>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="mt-4 flex gap-1.5"
+      >
+        {release.entries.slice(0, 6).map((e, i) => (
+          <span
+            key={i}
+            className="h-1.5 rounded-full"
+            style={{
+              width: 24 + i * 6,
+              background: TAG_META[e.tag].color,
+              opacity: 0.35 + i * 0.1,
+            }}
+          />
+        ))}
+      </motion.div>
+    </FrameShell>
+  );
+}
+
+function FeatureFrame({
+  release,
+  entry,
+  index,
+}: {
+  release: ChangelogRelease;
+  entry: ChangelogEntry;
+  index: number;
+}) {
+  const tag = TAG_META[entry.tag];
+  const accent = accentOf(index + 1);
+  const gift = useMemo(() => {
+    const list = Object.values(GIFT_BY_ID);
+    return list[(index * 37) % Math.max(list.length, 1)];
+  }, [index]);
+
+  return (
+    <FrameShell release={release} accent={accent}>
+      {/* gift sits above the copy: the «product shot» of the frame */}
+      {gift && (
+        <motion.div
+          initial={{ opacity: 0, y: 30, rotate: 10, scale: 0.7 }}
+          animate={{ opacity: 1, y: 0, rotate: -5, scale: 1 }}
+          transition={{ delay: 0.18, type: "spring", stiffness: 170, damping: 16 }}
+          className="pointer-events-none mb-5 ml-auto w-[132px] rounded-2xl border border-white/12 bg-white/[0.06] p-2 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl"
+        >
+          <div
+            className="grid place-items-center overflow-hidden rounded-xl py-2.5"
+            style={{ background: `radial-gradient(120% 105% at 50% 5%, ${gift.tint}44, #0b0b10 75%)` }}
+          >
+            <GiftArt gift={gift} size={84} rounded="rounded-lg" motion="idle" />
+          </div>
+          <div className="mt-1.5 flex items-center justify-between px-0.5">
+            <span className="truncate text-[10px] font-extrabold text-white/80">{gift.name}</span>
+            <span className="flex items-center gap-0.5 text-[10px] font-black tabular-nums text-neon">
+              {gift.stars.toLocaleString("ru-RU")}
+              <StarIcon className="size-2" />
+            </span>
+          </div>
+        </motion.div>
+      )}
+
+      {/* oversize number: the «1/4» beat of a story */}
+      <motion.div
+        initial={{ opacity: 0, x: -30 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ type: "spring", stiffness: 210, damping: 24 }}
+        className="mb-2 flex items-end gap-3"
+      >
+        <span className="font-display text-[58px] font-black leading-none tracking-tighter text-white/90">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <span
+          className="mb-1.5 rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider"
+          style={{ background: `${tag.color}26`, color: tag.color }}
+        >
+          {tag.label}
+        </span>
+      </motion.div>
+
+      <motion.p
+        initial={{ opacity: 0, y: 22, filter: "blur(8px)" }}
+        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+        transition={{ delay: 0.12, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        className="max-w-full font-display text-[22px] font-black leading-tight tracking-tight text-white"
+      >
+        {entry.text}
+      </motion.p>
+    </FrameShell>
+  );
+}
+
+function MoreFrame({ release, entries }: { release: ChangelogRelease; entries: ChangelogEntry[] }) {
+  return (
+    <FrameShell release={release} accent={accentOf(4)}>
+      <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/40">и ещё</p>
+      <ul className="mt-3 space-y-2.5">
+        {entries.map((e, i) => {
+          const tag = TAG_META[e.tag];
+          return (
+            <motion.li
+              key={i}
+              initial={{ opacity: 0, x: -18 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.08 + i * 0.07, type: "spring", stiffness: 220, damping: 26 }}
+              className="flex items-start gap-2.5 rounded-2xl border border-white/10 bg-black/30 p-3 backdrop-blur"
+            >
+              <span
+                className="mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider"
+                style={{ background: `${tag.color}22`, color: tag.color }}
+              >
+                {tag.label}
+              </span>
+              <span className="text-[12.5px] font-semibold leading-snug text-white/85">{e.text}</span>
+            </motion.li>
+          );
+        })}
+      </ul>
+    </FrameShell>
+  );
+}
+
+function ChannelFrame({ release }: { release: ChangelogRelease }) {
+  return (
+    <FrameShell release={release} accent="#3b9dff" watermark={false}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: "spring", stiffness: 200, damping: 20 }}
+        className="flex items-center gap-3"
+      >
+        <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-neon to-[#7bd400] text-[22px] font-black text-black shadow-[0_16px_40px_-18px_rgba(163,255,18,0.9)]">
+          ★
+        </span>
+        <div>
+          <p className="flex items-center gap-1.5 text-[18px] font-black tracking-tight">
+            telegUP
+            <CheckMark kind="major" size={16} />
+          </p>
+          <p className="text-[11.5px] text-white/40">Официальный канал · обновления и фиксы</p>
+        </div>
+      </motion.div>
+
+      <motion.p
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.14 }}
+        className="mt-4 max-w-[30ch] text-[13.5px] leading-relaxed text-white/65"
+      >
+        Всё, что вышло в обновлении {release.version} — уже в игре. Дальше будет больше.
+      </motion.p>
+
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.24 }}
+        className="mt-4 flex flex-col gap-2"
+      >
+        <ChannelLink />
+      </motion.div>
+    </FrameShell>
+  );
+}
+
+/** Filled in when the channel gets a public link; a plain hint until then. */
+const CHANNEL_URL = "";
+
+function ChannelLink() {
+  if (!CHANNEL_URL) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-black/30 px-3.5 py-3 text-[11.5px] font-bold text-white/45 backdrop-blur">
+        Апдейты и фиксы публикуем в канале — вкладка «Канал»
+      </div>
+    );
+  }
+  return (
+    <a
+      href={CHANNEL_URL}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center justify-between rounded-2xl border border-neon/30 bg-neon/10 px-3.5 py-3 text-[12.5px] font-extrabold text-neon backdrop-blur transition-colors hover:bg-neon/15"
+    >
+      Перейти в канал
+      <span>→</span>
+    </a>
+  );
+}
+
+/* ------------------------------------------------------------------ player */
+
+function Slideshow({ onClose, startIndex = 0 }: { onClose: () => void; startIndex?: number }) {
+  const frames = useMemo(() => CHANGELOG.flatMap(releaseToFrames), []);
+  const [current, setCurrent] = useState(startIndex);
   const [paused, setPaused] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
+  const startX = useRef<number | null>(null);
+  const startY = useRef<number | null>(null);
 
   const go = useCallback(
     (dir: 1 | -1) => {
       setCurrent((c) => {
         const next = c + dir;
-        if (next < 0) return slides.length - 1;
-        if (next >= slides.length) return 0;
+        if (next < 0) return frames.length - 1;
+        if (next >= frames.length) return 0;
         return next;
       });
     },
-    [slides.length],
+    [frames.length],
   );
 
   useEffect(() => {
     if (paused) return;
-    timer.current = window.setTimeout(() => go(1), SLIDE_MS);
-    return () => window.clearTimeout(timer.current);
+    const t = window.setTimeout(() => go(1), SLIDE_MS);
+    return () => window.clearTimeout(t);
   }, [current, paused, go]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
-      if (e.key === "ArrowDown" || e.key === "ArrowRight") go(1);
+      if (e.key === "ArrowDown" || e.key === "ArrowRight" || e.key === " ") {
+        e.preventDefault();
+        go(1);
+      }
       if (e.key === "ArrowUp" || e.key === "ArrowLeft") go(-1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [go, onClose]);
 
-  const slide = slides[current];
+  const frame = frames[current];
+  const releaseIndex = CHANGELOG.findIndex((r) => r.version === frame.release.version);
+  const inRelease = frames
+    .map((f, i) => ({ f, i }))
+    .filter(({ f }) => f.release.version === frame.release.version);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[90] bg-black"
-    >
-      {/* phone-shaped stage on desktop, full-bleed on mobile */}
-      <div className="relative mx-auto flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-[#0a0a0f] sm:my-6 sm:h-[calc(100%-3rem)] sm:rounded-[28px] sm:border sm:border-white/10">
-        {/* top progress bar */}
-        <div className="absolute inset-x-0 top-0 z-20 flex gap-1 px-2 pt-2">
-          {slides.map((_, i) => (
-            <div key={i} className="h-0.5 flex-1 overflow-hidden rounded-full bg-white/20">
-              {i < current && <div className="h-full w-full bg-white/80" />}
-              {i === current && (
-                <motion.div
-                  key={`${current}-${paused}`}
-                  className="h-full bg-white"
-                  initial={{ width: "0%" }}
-                  animate={{ width: paused ? "40%" : "100%" }}
-                  transition={{ duration: paused ? 0.2 : SLIDE_MS / 1000, ease: "linear" }}
-                />
-              )}
-            </div>
-          ))}
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[90] bg-black">
+      <div className="relative mx-auto flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-[#08080c] sm:my-6 sm:h-[calc(100%-3rem)] sm:rounded-[28px] sm:border sm:border-white/10">
+        {/* per-release progress, like story pips */}
+        <div className="absolute inset-x-0 top-0 z-20 px-2 pt-2">
+          <div className="flex gap-1">
+            {CHANGELOG.map((r, i) => (
+              <div key={r.version} className="h-0.5 flex-1 overflow-hidden rounded-full bg-white/15">
+                {i < releaseIndex && <div className="h-full w-full bg-white/70" />}
+                {i === releaseIndex && (
+                  <div className="flex h-full w-full gap-1">
+                    {inRelease.map(({ i: globalIdx }) => (
+                      <div key={globalIdx} className="h-full flex-1 overflow-hidden rounded-full bg-white/20">
+                        {globalIdx < current && <div className="h-full w-full bg-white" />}
+                        {globalIdx === current && (
+                          <motion.div
+                            key={`${current}-${paused}`}
+                            className="h-full bg-white"
+                            initial={{ width: "0%" }}
+                            animate={{ width: paused ? "35%" : "100%" }}
+                            transition={{ duration: paused ? 0.2 : SLIDE_MS / 1000, ease: "linear" }}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* close */}
         <button
           onClick={onClose}
           className="absolute right-3 top-5 z-30 grid size-8 place-items-center rounded-full bg-black/50 text-white/70 backdrop-blur hover:text-white"
@@ -231,34 +442,47 @@ function Slideshow({ onClose }: { onClose: () => void }) {
           ✕
         </button>
 
-        {/* tap zones: pause on tap, but let the card animate */}
         <div
           className="relative flex-1 overflow-hidden"
           onClick={() => setPaused((p) => !p)}
+          onPointerDown={(e) => {
+            startX.current = e.clientX;
+            startY.current = e.clientY;
+          }}
+          onPointerUp={(e) => {
+            const dx = startX.current === null ? 0 : e.clientX - startX.current;
+            const dy = startY.current === null ? 0 : e.clientY - startY.current;
+            startX.current = null;
+            startY.current = null;
+            if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
+            else if (Math.abs(dy) > 64) go(dy < 0 ? 1 : -1);
+          }}
         >
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
               key={current}
-              initial={{ y: "100%", opacity: 0, scale: 0.96 }}
+              initial={{ y: "100%", opacity: 0, scale: 0.94 }}
               animate={{ y: "0%", opacity: 1, scale: 1 }}
-              exit={{ y: "-30%", opacity: 0, scale: 0.98 }}
+              exit={{ y: "-28%", opacity: 0, scale: 0.98 }}
               transition={{ type: "spring", stiffness: 190, damping: 26, mass: 0.9 }}
               className="absolute inset-0"
             >
-              <SlideCard slide={slide} active={!paused} />
+              {frame.kind === "cover" && <CoverFrame release={frame.release} />}
+              {frame.kind === "feature" && (
+                <FeatureFrame release={frame.release} entry={frame.entry} index={frame.index} />
+              )}
+              {frame.kind === "more" && <MoreFrame release={frame.release} entries={frame.entries} />}
+              {frame.kind === "channel" && <ChannelFrame release={frame.release} />}
             </motion.div>
           </AnimatePresence>
 
           {paused && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center">
-              <span className="grid size-16 place-items-center rounded-full bg-black/50 text-2xl backdrop-blur">
-                ▶
-              </span>
+              <span className="grid size-16 place-items-center rounded-full bg-black/50 text-2xl backdrop-blur">▶</span>
             </div>
           )}
         </div>
 
-        {/* bottom controls */}
         <div className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between px-6 pb-5">
           <button
             onClick={(e) => {
@@ -266,6 +490,7 @@ function Slideshow({ onClose }: { onClose: () => void }) {
               go(-1);
             }}
             className="grid size-10 place-items-center rounded-full bg-white/10 text-white/70 backdrop-blur hover:bg-white/20"
+            aria-label="Назад"
           >
             ↑
           </button>
@@ -275,6 +500,7 @@ function Slideshow({ onClose }: { onClose: () => void }) {
               setPaused((p) => !p);
             }}
             className="grid size-10 place-items-center rounded-full bg-white/10 text-white/70 backdrop-blur hover:bg-white/20"
+            aria-label="Пауза"
           >
             {paused ? "▶" : "❚❚"}
           </button>
@@ -284,6 +510,7 @@ function Slideshow({ onClose }: { onClose: () => void }) {
               go(1);
             }}
             className="grid size-10 place-items-center rounded-full bg-white/10 text-white/70 backdrop-blur hover:bg-white/20"
+            aria-label="Дальше"
           >
             ↓
           </button>
@@ -295,10 +522,28 @@ function Slideshow({ onClose }: { onClose: () => void }) {
 
 /* ------------------------------------------------------------------- page */
 
+const SEEN_KEY = "telegup.updates.seen";
+
 export default function Updates() {
   const [show, setShow] = useState(false);
   const toast = useGame((s) => s.toast);
   const totalEntries = CHANGELOG.reduce((n, r) => n + r.entries.length, 0);
+  const latest = CHANGELOG[0];
+
+  // first visit after a new release opens the slideshow by itself — like a
+  // fresh story banner in a messenger; «seen» is per account so a shared
+  // browser still shows the story to the next player
+  const onlineUserId = useGame((s) => s.onlineUserId);
+  const seenKey = onlineUserId ? `${SEEN_KEY}.${onlineUserId}` : SEEN_KEY;
+  const [seen, setSeen] = useState(() => localStorage.getItem(seenKey) ?? "");
+  const fresh = latest && seen !== latest.version;
+
+  useEffect(() => {
+    if (!fresh) return;
+    setShow(true);
+    localStorage.setItem(seenKey, latest.version);
+    setSeen(latest.version);
+  }, [fresh, latest, seenKey]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -323,6 +568,27 @@ export default function Updates() {
             ▶ Слайдшоу
           </Button>
         </div>
+
+        {/* poster of the newest release — the same look as the story cover */}
+        <button
+          onClick={() => setShow(true)}
+          className="relative mt-4 flex w-full items-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b10] p-3 text-left transition-transform hover:-translate-y-0.5"
+        >
+          <div
+            className="pointer-events-none absolute inset-0 opacity-90"
+            style={{ background: "radial-gradient(120% 140% at 15% 0%, #a3ff1233 0%, transparent 58%)" }}
+          />
+          <span className="relative grid size-12 shrink-0 place-items-center rounded-xl bg-neon/15 font-display text-[20px] font-black text-neon">
+            1
+          </span>
+          <div className="relative min-w-0 flex-1">
+            <p className="truncate text-[13px] font-extrabold tracking-tight">{latest.title}</p>
+            <p className="truncate text-[11px] text-white/35">{latest.summary}</p>
+          </div>
+          <span className="relative shrink-0 rounded-xl bg-white/10 px-2.5 py-1.5 text-[11px] font-black text-white/80">
+            ▶ смотреть
+          </span>
+        </button>
       </header>
 
       {CHANGELOG.map((release, ri) => (

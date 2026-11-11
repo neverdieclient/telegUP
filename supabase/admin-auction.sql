@@ -3,16 +3,19 @@
 --
 -- Что делает:
 --  1. добавляет в `auctions` поля для лотов, которые выставляет владелец;
---  2. даёт владельцу функции создания / снятия лотов (по образцу owner_gate);
---  3. помечает предстоящие аукционы: лот виден всем, но закрыт до `starts_at`
---     — на подарке висит плашка «скоро», ставки и выкуп недоступны;
---  4. учит `place_bid` и `expire_stale_auctions` уважать `starts_at`.
+--  2. дом лотов — отдельный источник: ставки на лот дома разрешены всем,
+--     включая владельца (раньше лот записывался на владельца и отвечал
+--     «cannot bid on your own lot»);
+--  3. предстоящие аукционы: лот виден всем, но закрыт до `starts_at`;
+--  4. закрытие лотов: просроченный лот помечается `sold`, победитель получает
+--     подарок и забирает звёзды, проигравший — возврат. Лот исчезает с доски.
 
 -- ---------------------------------------------------------------- схема
 -- 'player' — обычный лот игрока (как было), 'house' — лот владельца.
-alter table public.auctions add column if not exists source   text not null default 'player';
-alter table public.auctions add column if not exists starts_at timestamptz;
-alter table public.auctions add column if not exists lot_label text;
+alter table public.auctions add column if not exists source    text not null default 'player';
+alter table public.auctions add column if not exists starts_at  timestamptz;
+alter table public.auctions add column if not exists lot_label  text;
+alter table public.auctions add column if not exists settled_at timestamptz;
 
 alter table public.auctions drop constraint if exists auctions_source_check;
 alter table public.auctions add constraint auctions_source_check
@@ -22,9 +25,14 @@ create index if not exists auctions_upcoming_idx
   on public.auctions (starts_at)
   where sold = false and cancelled = false;
 
+create index if not exists auctions_open_end_idx
+  on public.auctions (ends_at)
+  where sold = false and cancelled = false;
+
 -- --------------------------------------------------------------- владелец
--- Запасной аккаунт «дома» для FK seller_id → auth.users: настоящая сессия
--- владельца никогда не должна терять лот при повторной регистрации.
+-- Запасной аккаунт «дома» для FK seller_id → auth.users: нужен только чтобы
+-- столбец не был пустым. Для лотов дома `seller_id` не сравнивается с
+-- покупателем, поэтому ставить на них может любой.
 create or replace function public.owner_auction_seller()
 returns uuid
 language plpgsql
@@ -70,15 +78,15 @@ grant execute on function public.owner_auction_seller() to authenticated;
 -- Предстоящий лот (p_start_in > 0) считается «скоро»: ставки запрещены,
 -- на карточке висит плашка, купить нельзя.
 create or replace function public.owner_create_auction(
-  p_item_id   text,
-  p_item_name text,
-  p_item_kind text,
+  p_item_id    text,
+  p_item_name  text,
+  p_item_kind  text,
   p_item_value bigint,
-  p_min_bid   bigint,
-  p_buyout    bigint,
-  p_minutes   int,
-  p_start_in  int default 0,
-  p_label     text default null
+  p_min_bid    bigint,
+  p_buyout     bigint,
+  p_minutes    int,
+  p_start_in   int default 0,
+  p_label      text default null
 )
 returns bigint
 language plpgsql
@@ -131,8 +139,7 @@ $$;
 revoke all on function public.owner_create_auction(text, text, text, bigint, bigint, bigint, int, int, text) from anon;
 grant execute on function public.owner_create_auction(text, text, text, bigint, bigint, bigint, int, int, text) to authenticated;
 
--- Снять лот (отмена; игроки, если были ставки, ничего не получают — лот
--- просто исчезает из списка).
+-- Снять лот: он пропадает с доски, ставки игрокам возвращаются через settle.
 create or replace function public.owner_cancel_auction(p_lot bigint)
 returns void
 language plpgsql
@@ -152,7 +159,7 @@ $$;
 revoke all on function public.owner_cancel_auction(bigint) from anon;
 grant execute on function public.owner_cancel_auction(bigint) to authenticated;
 
--- Пересоздать лот: новые цена / выкуп / время. Старый снимается целиком.
+-- Переставить цену / выкуп / время у открытого лота.
 create or replace function public.owner_update_auction(
   p_lot       bigint,
   p_min_bid   bigint,
@@ -193,7 +200,9 @@ revoke all on function public.owner_update_auction(bigint, bigint, bigint, int, 
 grant execute on function public.owner_update_auction(bigint, bigint, bigint, int, int) to authenticated;
 
 -- --------------------------------------------------------- ставки и сроки
--- То же, что было, плюс: пока лот не открылся — ставить нельзя.
+-- То же, что было, плюс:
+--   * на лот дома может ставить любой, даже владелец;
+--   * пока лот не открылся — ставить нельзя.
 create or replace function public.place_bid(lot bigint, amount bigint)
 returns void
 language plpgsql
@@ -203,17 +212,28 @@ as $$
 declare
   a public.auctions;
   name text;
+  already boolean;
 begin
   select * into a from public.auctions where id = lot for update;
   if a is null then raise exception 'lot not found'; end if;
   if a.sold or a.cancelled then raise exception 'lot closed'; end if;
   if a.starts_at is not null and a.starts_at > now() then raise exception 'lot not started'; end if;
   if a.ends_at <= now() then raise exception 'lot finished'; end if;
-  if a.seller_id = auth.uid() then raise exception 'cannot bid on your own lot'; end if;
+  if a.source <> 'house' and a.seller_id = auth.uid() then
+    raise exception 'cannot bid on your own lot';
+  end if;
   if amount < a.min_bid or amount <= a.top_bid then raise exception 'bid too low'; end if;
   if a.buyout is not null and amount > a.buyout then raise exception 'above buyout'; end if;
 
   select nickname into name from public.profiles where id = auth.uid();
+
+  -- прежний лидер получает свои звёзды назад, как только его перебили
+  already := a.top_bidder is not null and a.top_bidder <> auth.uid();
+  if already then
+    update public.profiles
+       set stars = greatest(0, stars + a.top_bid)
+     where id = a.top_bidder;
+  end if;
 
   -- every bid (re)starts a 30-minute window: if nobody outbids within it,
   -- the item belongs to the bidder
@@ -232,7 +252,66 @@ $$;
 revoke all on function public.place_bid(bigint, bigint) from anon;
 grant execute on function public.place_bid(bigint, bigint) to authenticated;
 
--- Предстоящие лоты не должны истекать «без ставок», пока не откроются.
+-- Просроченный лот с победителем → подарок победителю, звёзды уходят
+-- продавцу (игроку) или сгорают (лот дома). Без ставок — просто отменяется.
+create or replace function public.settle_expired_auctions()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  a public.auctions;
+  n int := 0;
+begin
+  for a in
+    select * from public.auctions
+     where sold = false
+       and cancelled = false
+       and ends_at <= now()
+     order by ends_at
+     limit 200
+  loop
+    if a.top_bidder is null or a.top_bid = 0 then
+      -- без ставок: предстоящие не трогаем, старые лоты уходят с доски
+      if a.starts_at is null or a.starts_at <= now() then
+        update public.auctions
+           set cancelled = true, settled_at = now()
+         where id = a.id;
+        n := n + 1;
+      end if;
+      continue;
+    end if;
+
+    -- предмет победителю
+    if a.item_kind = 'gift' then
+      insert into public.deliveries (user_id, gift_id, gift_name, from_name, message)
+      values (a.top_bidder, a.item_id, a.item_name, 'Аукцион', 'Победил на аукционе');
+    end if;
+
+    -- звёзды продавцу (лоты дома — сгорают)
+    if a.source <> 'house' then
+      update public.profiles
+         set stars = greatest(0, stars + a.top_bid),
+             owner_synced_at = now()
+       where id = a.seller_id;
+    end if;
+
+    update public.auctions
+       set sold = true, settled_at = now()
+     where id = a.id;
+    n := n + 1;
+  end loop;
+
+  return n;
+end;
+$$;
+
+revoke all on function public.settle_expired_auctions() from anon;
+grant execute on function public.settle_expired_auctions() to authenticated;
+
+-- «Лот без ставок вернётся владельцу» — предстоящие лоты не должны истекать,
+-- пока не откроются.
 create or replace function public.expire_stale_auctions()
 returns int
 language plpgsql
@@ -242,6 +321,8 @@ as $$
 declare
   n int;
 begin
+  perform public.settle_expired_auctions();
+
   with gone as (
     update public.auctions
        set cancelled = true

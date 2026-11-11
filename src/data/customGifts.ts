@@ -267,3 +267,54 @@ export async function uploadCustomImage(file: File): Promise<{ url?: string; err
   const { data } = supabase.storage.from("gift-art").getPublicUrl(path);
   return { url: data.publicUrl };
 }
+
+/** True for files we can actually use as model art. */
+export function isImageFile(name: string, type = ""): boolean {
+  return type.startsWith("image/") || /\.(webp|png|jpe?g|gif|avif|bmp)$/i.test(name);
+}
+
+/** «Gold Adesanya.webp» → «Gold Adesanya». */
+export function modelNameFromFile(fileName: string): string {
+  const base = fileName.split(/[\\/]/).pop() ?? fileName;
+  return (
+    base
+      .replace(/\.[a-z0-9]+$/i, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() || "Модель"
+  );
+}
+
+/**
+ * Upload a whole folder / multi-selection of pictures at once.
+ *
+ * Files are uploaded a few at a time (Supabase rate-limits bursts), and the
+ * result keeps the original order so the model list matches the folder listing.
+ * One bad file never stops the rest — it lands in `errors` instead.
+ */
+export async function uploadCustomImages(
+  files: File[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ results: { fileName: string; url: string }[]; errors: string[] }> {
+  if (!supabase) return { results: [], errors: ["Онлайн-база не подключена"] };
+  const slots: ({ fileName: string; url: string } | null)[] = files.map(() => null);
+  const errors: string[] = [];
+  let next = 0;
+  let done = 0;
+
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= files.length) return;
+      const file = files[i];
+      const res = await uploadCustomImage(file);
+      if (res.url) slots[i] = { fileName: file.name, url: res.url };
+      else errors.push(`${file.name}: ${res.error ?? "не загрузилось"}`);
+      done++;
+      onProgress?.(done, files.length);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(4, files.length) }, worker));
+  return { results: slots.filter((x): x is { fileName: string; url: string } => x !== null), errors };
+}

@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deleteCustomGift, saveCustomGift, slugFor, uploadCustomImage } from "../../data/customGifts";
+import {
+  deleteCustomGift,
+  isImageFile,
+  modelNameFromFile,
+  saveCustomGift,
+  slugFor,
+  uploadCustomImage,
+  uploadCustomImages,
+} from "../../data/customGifts";
 import type { CustomGiftDraft, CustomModel, CustomVisibility } from "../../data/customGifts";
 import { useCustomGiftRows, useCustomGiftStatus } from "../../lib/useCatalog";
 import { useIsOwnerEmail } from "../../lib/useIsOwnerEmail";
@@ -110,6 +118,166 @@ function ImageField({
 }
 
 /**
+ * Folder import: pick a whole folder (or many files at once) and turn every
+ * picture into an upgrade model — the name comes from the file name, so a
+ * folder of «Gold Adesanya.webp», «UFC World.webp»… is added in one go.
+ */
+function BulkModelImport({
+  defaults,
+  onAdd,
+  onBusy,
+}: {
+  defaults: { price: number; rarityPct: number };
+  onAdd: (models: CustomModel[]) => void;
+  onBusy: (busy: boolean) => void;
+}) {
+  const dirRef = useRef<HTMLInputElement | null>(null);
+  const filesRef = useRef<HTMLInputElement | null>(null);
+  const [price, setPrice] = useState(defaults.price);
+  const [rarityPct, setRarityPct] = useState(defaults.rarityPct);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const busy = progress !== null;
+
+  const handle = async (list: FileList | null) => {
+    const picked = Array.from(list ?? []).filter((f) => isImageFile(f.name, f.type));
+    if (!picked.length) {
+      setErrors(["В выбранной папке нет картинок (webp / png / jpg)"]);
+      return;
+    }
+    setErrors([]);
+    setProgress({ done: 0, total: picked.length });
+    onBusy(true);
+    const res = await uploadCustomImages(picked, (done, total) => setProgress({ done, total }));
+    onBusy(false);
+    setProgress(null);
+    setErrors(res.errors);
+    if (res.results.length) {
+      onAdd(
+        res.results.map((r) => ({
+          name: modelNameFromFile(r.fileName),
+          price: Math.max(1, Math.round(price)),
+          rarityPct,
+          image: r.url,
+        })),
+      );
+    }
+  };
+
+  const pct = progress ? Math.round((progress.done / Math.max(1, progress.total)) * 100) : 0;
+
+  return (
+    <div className="space-y-2 rounded-xl border border-neon/25 bg-neon/[0.04] p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-neon/80">
+          Папка с улучшениями
+        </p>
+        <span className="text-[10px] text-white/30">все картинки за раз</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        <label className="space-y-1">
+          <span className="block text-[10px] text-white/40">Цена ★ для всех</span>
+          <input
+            type="number"
+            min={1}
+            value={price}
+            disabled={busy}
+            onChange={(e) => setPrice(Math.max(0, Number(e.target.value) || 0))}
+            className={field}
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="block text-[10px] text-white/40">Редкость % для всех</span>
+          <input
+            type="number"
+            min={0.1}
+            max={100}
+            step={0.1}
+            value={rarityPct}
+            disabled={busy}
+            onChange={(e) => setRarityPct(Number(e.target.value) || 0)}
+            className={field}
+          />
+        </label>
+      </div>
+
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => dirRef.current?.click()}
+          className="flex-1 rounded-xl border border-neon/35 bg-neon/12 px-2 py-2 text-[11.5px] font-extrabold text-neon hover:bg-neon/20 disabled:opacity-40"
+        >
+          Выбрать папку
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => filesRef.current?.click()}
+          className="flex-1 rounded-xl border border-white/10 bg-white/6 px-2 py-2 text-[11.5px] font-bold text-white/75 hover:bg-white/10 disabled:opacity-40"
+        >
+          Выбрать файлы
+        </button>
+      </div>
+
+      {/* `webkitdirectory` lets the owner pick a whole folder in one click */}
+      <input
+        ref={dirRef}
+        type="file"
+        multiple
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        {...({ webkitdirectory: "", directory: "" } as any)}
+        className="hidden"
+        onChange={(e) => {
+          void handle(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={filesRef}
+        type="file"
+        multiple
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          void handle(e.target.files);
+          e.target.value = "";
+        }}
+      />
+
+      {progress && (
+        <div className="space-y-1">
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-neon transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <p className="text-[10px] text-white/40">
+            Загружаю {progress.done} из {progress.total}…
+          </p>
+        </div>
+      )}
+
+      {!!errors.length && (
+        <div className="space-y-0.5">
+          <p className="text-[10px] font-bold text-mythic">Не загрузилось: {errors.length}</p>
+          {errors.slice(0, 4).map((e) => (
+            <p key={e} className="truncate text-[10px] text-mythic/70">
+              {e}
+            </p>
+          ))}
+        </div>
+      )}
+
+      <p className="text-[10px] leading-relaxed text-white/25">
+        Название берётся из имени файла («Gold Adesanya.webp» → «Gold Adesanya»), картинка
+        загружается в облако. Цену и редкость потом можно поправить у каждой модели.
+      </p>
+    </div>
+  );
+}
+
+/**
  * Owner panel for minting gifts and their upgrade models.
  *
  * - «Всем» gifts appear in the market for every player.
@@ -127,6 +295,7 @@ export function CustomGiftEditor() {
   /** which saved row is being edited (null = creating a new one) */
   const [editingId, setEditingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [slugTouched, setSlugTouched] = useState(false);
 
@@ -148,6 +317,8 @@ export function CustomGiftEditor() {
 
   const removeModel = (i: number) =>
     setDraft((d) => ({ ...d, models: d.models.filter((_, k) => k !== i) }));
+
+  const addModels = (models: CustomModel[]) => setDraft((d) => ({ ...d, models: [...d.models, ...models] }));
 
   const startCreate = () => {
     setEditingId(null);
@@ -412,6 +583,16 @@ export function CustomGiftEditor() {
               + Добавить модель
             </button>
           </div>
+
+          <BulkModelImport
+            defaults={{
+              price: Math.max(draft.price * 2, 100),
+              rarityPct: 10,
+            }}
+            onAdd={addModels}
+            onBusy={setImporting}
+          />
+
           {!draft.models.length && (
             <p className="text-[10.5px] text-white/25">Пока без улучшений — подарок будет без моделей.</p>
           )}
@@ -472,7 +653,7 @@ export function CustomGiftEditor() {
               {draft.price.toLocaleString("ru-RU")}★ · {draft.visibility === "test" ? "только я" : "всем"}
             </p>
           </div>
-          <Button size="sm" onClick={() => void save()} disabled={busy || !valid}>
+          <Button size="sm" onClick={() => void save()} disabled={busy || importing || !valid}>
             {busy ? "…" : editingId ? "Сохранить" : "Создать"}
           </Button>
         </div>

@@ -192,6 +192,12 @@ function fmtLeft(ms: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+/** A lot whose clock ran out — it must leave the board immediately. */
+function isExpired(lot: AuctionRow, now = Date.now()): boolean {
+  if (lot.sold || lot.cancelled) return true;
+  return new Date(lot.ends_at).getTime() <= now;
+}
+
 const ME = "local";
 
 /** Any seller id that means "this user": the offline flag or the online uuid. */
@@ -329,15 +335,39 @@ export default function Auction() {
   const live = useMemo(
     () =>
       lots
-        .filter((l) => !l.sold && !l.cancelled)
+        .filter((l) => !l.sold && !l.cancelled && !isExpired(l))
         .sort((a, b) => new Date(a.ends_at).getTime() - new Date(b.ends_at).getTime()),
     [lots],
   );
   const mineIds = useMemo(() => mySellerIds(user?.id), [user?.id]);
   const mine = useMemo(
-    () => lots.filter((l) => mineIds.has(l.seller_id)),
+    () => lots.filter((l) => mineIds.has(l.seller_id) && !isExpired(l)),
     [lots, mineIds],
   );
+
+  /**
+   * Online mode: the board never shows finished lots. Closing them on the
+   * server also pays the winner out, so it is done as soon as the timer hits
+   * zero — not only when the page is opened again.
+   */
+  useEffect(() => {
+    if (!onlineEnabled) return;
+    const due = lots.filter((l) => !l.sold && !l.cancelled && isExpired(l));
+    if (!due.length) return;
+    const keys = due.map((l) => `end:${l.id}`);
+    if (keys.every((k) => settledRef.current.has(k))) return;
+    keys.forEach((k) => settledRef.current.add(k));
+
+    void (async () => {
+      for (const lot of due) await closeAuction(lot.id);
+      const won = due.filter((l) => !!l.top_bidder && mineIds.has(l.top_bidder));
+      for (const lot of won) {
+        if (lot.item_kind === "gift" && GIFT_BY_ID[lot.item_id]) addItem(lot.item_id, "market");
+        toast({ kind: "gift", title: "Лот выигран", message: `${lot.item_name} · ${fmt(lot.top_bid)} ★` });
+      }
+      await reload();
+    })();
+  }, [lots, addItem, reload, toast, mineIds]);
 
   /* ---- actions ---- */
 
@@ -665,9 +695,7 @@ function LotCard({
             Ставка
           </Button>
         </div>
-      ) : (
-        <p className="rounded-xl bg-white/5 py-2 text-center text-[11px] font-bold text-white/35">Лот завершён</p>
-      )}
+      ) : null}
 
       {lot.buyout != null && left.ms > 0 && (
         <button

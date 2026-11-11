@@ -508,7 +508,7 @@ export type BidRow = {
   created_at: string;
 };
 
-/** All lots that are still live, newest-ending first. */
+/** All lots that are still on the board, soonest-ending first. */
 export async function fetchAuctions(): Promise<AuctionRow[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
@@ -519,7 +519,10 @@ export async function fetchAuctions(): Promise<AuctionRow[]> {
     .order("ends_at", { ascending: true })
     .limit(200);
   if (error || !data) return [];
-  return data as AuctionRow[];
+  // a lot past its clock is closed on the server, but the board must never
+  // show it even for the one poll until that lands
+  const now = Date.now();
+  return (data as AuctionRow[]).filter((l) => new Date(l.ends_at).getTime() > now);
 }
 
 export async function fetchBids(auctionId: number, limit = 12): Promise<BidRow[]> {
@@ -583,6 +586,25 @@ export async function closeAuction(auctionId: number): Promise<{ error?: string 
   if (!supabase) return { error: "Онлайн не подключён" };
   const { error } = await supabase.from("auctions").update({ sold: true }).eq("id", auctionId);
   return error ? { error: error.message } : {};
+}
+
+/**
+ * Close every lot whose clock ran out — winner gets the gift and the stars
+ * move to the seller (a house lot's stars burn). Runs on the server so a lot
+ * cannot be kept alive by a lagging client; finished lots then disappear from
+ * the board for everybody.
+ */
+export async function settleAuctions(): Promise<number> {
+  if (!supabase) return 0;
+  const { data, error } = await supabase.rpc("settle_expired_auctions");
+  if (error) return 0;
+  return Number(data) || 0;
+}
+
+/** Lots that are still on the board (not closed and not past their end). */
+export function isLotLive(lot: AuctionRow, now = Date.now()): boolean {
+  if (lot.sold || lot.cancelled) return false;
+  return new Date(lot.ends_at).getTime() > now;
 }
 
 /* --------------------------------------------------- owner (house) auctions */

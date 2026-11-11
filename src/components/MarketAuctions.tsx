@@ -1,33 +1,42 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useGame } from "../store/useGame";
-import { GIFT_BY_ID } from "../data/gifts";
+import { GIFT_BY_ID, type Gift } from "../data/gifts";
 import { useGiftIndex } from "../lib/useCatalog";
 import {
   auctionClosesIn,
   auctionOpensIn,
+  isLotLive,
   nextBid,
   shortLeft,
   useLiveAuctions,
 } from "../lib/auctions";
 import { placeBid, type AuctionRow } from "../lib/players";
-import { onlineEnabled } from "../lib/supabase";
+import { onlineEnabled, supabase } from "../lib/supabase";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
 
 /**
- * Market · «Аукционы».
+ * Market · вкладка «Аукцион».
  *
- * The owner puts gifts on the block from the admin panel; they show up here
- * as cards in the shop — a live lot with a bid box, or an upcoming auction
- * that is still closed but already visible («скоро»). Every gift can be
- * auctioned this way, including owner-made ones.
+ * Cards of the lots that are on the block. A lot is either live (bid box and
+ * buyout) or upcoming — still closed, shown with a pulsating «скоро» badge
+ * until its opening time. Finished lots leave the board on their own.
+ *
+ * The old `/app/auction` screen is a separate thing and is not touched here.
  */
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
-export function MarketAuctions() {
-  const lots = useLiveAuctions();
+/** Start price of the test gift, so a buyout can be checked against it. */
+function customRowPrice(id: string, rows: { slug: string; price: number }[]): number | null {
+  if (!id.startsWith("custom-")) return null;
+  const slug = id.slice("custom-".length);
+  return rows.find((r) => r.slug === slug)?.price ?? null;
+}
+
+export function MarketAuctions({ customRows = [] }: { customRows?: { slug: string; price: number }[] }) {
+  const { lots, refresh } = useLiveAuctions();
   const [detail, setDetail] = useState<AuctionRow | null>(null);
   const [, setTick] = useState(0);
 
@@ -36,10 +45,8 @@ export function MarketAuctions() {
     return () => clearInterval(t);
   }, []);
 
-  if (!onlineEnabled || !lots.length) return null;
-
   const open = lots
-    .filter((l) => !l.sold && !l.cancelled)
+    .filter((l) => isLotLive(l))
     .sort((a, b) => {
       const ao = auctionOpensIn(a);
       const bo = auctionOpensIn(b);
@@ -52,7 +59,25 @@ export function MarketAuctions() {
       return auctionClosesIn(a) - auctionClosesIn(b);
     });
 
-  if (!open.length) return null;
+  // the open lot must keep following the board: bids, a buyout or the clock
+  const shown = detail ? open.find((l) => l.id === detail.id) ?? null : null;
+
+  if (!onlineEnabled) {
+    return (
+      <p className="rounded-2xl border border-white/8 bg-white/[0.02] p-6 text-center text-[12px] text-white/30">
+        Аукционы доступны только онлайн.
+      </p>
+    );
+  }
+
+  if (!open.length) {
+    return (
+      <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-8 text-center">
+        <p className="font-display text-lg font-black tracking-tight">Пока нет лотов</p>
+        <p className="mt-1 text-[12px] text-white/30">Скоро здесь появятся подарки с аукциона.</p>
+      </div>
+    );
+  }
 
   const upcoming = open.filter((l) => auctionOpensIn(l) > 0).length;
 
@@ -61,37 +86,37 @@ export function MarketAuctions() {
       <div className="flex items-end justify-between">
         <div>
           <p className="text-[10.5px] font-bold uppercase tracking-[0.2em] text-violet/80">Auction</p>
-          <h2 className="mt-0.5 font-display text-xl font-black tracking-tight">Аукционы</h2>
+          <h2 className="mt-0.5 font-display text-xl font-black tracking-tight">Аукцион</h2>
         </div>
-        {upcoming > 0 && (
-          <span className="rounded-lg border border-violet/30 bg-violet/10 px-2 py-1 text-[10px] font-bold text-violet">
-            скоро · {upcoming}
+        <div className="flex gap-1.5">
+          <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-bold text-white/45">
+            лотов · {open.length}
           </span>
-        )}
+          {upcoming > 0 && (
+            <span className="rounded-lg border border-violet/30 bg-violet/10 px-2 py-1 text-[10px] font-bold text-violet">
+              скоро · {upcoming}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {open.map((lot) => (
-          <AuctionCard
-            key={lot.id}
-            lot={lot}
-            onOpen={() => setDetail(lot)}
-          />
+          <AuctionCard key={lot.id} lot={lot} onOpen={() => setDetail(lot)} />
         ))}
       </div>
 
-      <AuctionSheet lot={detail} onClose={() => setDetail(null)} />
+      <AuctionSheet
+        lot={shown}
+        customRows={customRows}
+        onClose={() => setDetail(null)}
+        onDone={refresh}
+      />
     </section>
   );
 }
 
-function AuctionCard({
-  lot,
-  onOpen,
-}: {
-  lot: AuctionRow;
-  onOpen: () => void;
-}) {
+function AuctionCard({ lot, onOpen }: { lot: AuctionRow; onOpen: () => void }) {
   const byId = useGiftIndex();
   const gift = byId[lot.item_id];
   const opens = auctionOpensIn(lot);
@@ -134,7 +159,11 @@ function AuctionCard({
       <div className="flex flex-1 flex-col p-2.5">
         <h3 className="truncate text-[12px] font-extrabold tracking-tight">{lot.item_name}</h3>
         <p className="truncate text-[10px] text-white/35">
-          {upcoming ? (lot.lot_label || "предстоящий аукцион") : lot.top_bidder_name ? `лидер ${lot.top_bidder_name}` : "нет ставок"}
+          {upcoming
+            ? lot.lot_label || "предстоящий аукцион"
+            : lot.top_bidder_name
+              ? `лидер ${lot.top_bidder_name}`
+              : "нет ставок"}
         </p>
 
         <div className="mt-1.5 flex items-center justify-between">
@@ -172,59 +201,98 @@ function AuctionCard({
 
 function AuctionSheet({
   lot,
+  customRows,
   onClose,
+  onDone,
 }: {
   lot: AuctionRow | null;
+  customRows: { slug: string; price: number }[];
   onClose: () => void;
+  onDone: () => void;
 }) {
   const byId = useGiftIndex();
   const stars = useGame((s) => s.stars);
   const spendStars = useGame((s) => s.spendStars);
+  const addStars = useGame((s) => s.addStars);
   const addItem = useGame((s) => s.addItem);
   const toast = useGame((s) => s.toast);
+  const onlineUserId = useGame((s) => s.onlineUserId);
   const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => setAmount(""), [lot?.id]);
 
   if (!lot) return null;
 
-  const gift = byId[lot.item_id] ?? GIFT_BY_ID[lot.item_id];
+  const gift: Gift | undefined = byId[lot.item_id] ?? GIFT_BY_ID[lot.item_id];
   const opens = auctionOpensIn(lot);
-  const closes = auctionClosesIn(lot);
   const upcoming = opens > 0;
-  const ended = closes === 0;
   const min = nextBid(lot);
+  const mine = !!onlineUserId && lot.top_bidder === onlineUserId;
+  /** the bid this player already has on the lot, refunded on a raise */
+  const myHold = mine ? lot.top_bid : 0;
 
   const bid = async () => {
+    if (busy) return;
     const value = Number(amount) || min;
     if (value < min) {
       toast({ kind: "error", title: "Ставка слишком низкая", message: `Минимум ${fmt(min)} ★` });
       return;
     }
-    if (value > stars) {
+    if (lot.buyout != null && value >= lot.buyout) {
+      // reaching the buyout means "buy it now" — no silent overpay
+      return buyout();
+    }
+    if (value > stars + myHold) {
       toast({ kind: "error", title: "Недостаточно звёзд", message: `Нужно ${fmt(value)} ★` });
       return;
     }
-    const res = await placeBid(lot.id, value);
-    if (res.error) {
-      toast({ kind: "error", title: "Ставка не принята", message: res.error });
-      return;
+    setBusy(true);
+    try {
+      const res = await placeBid(lot.id, value);
+      if (res.error) {
+        toast({ kind: "error", title: "Ставка не принята", message: bidError(res.error) });
+        return;
+      }
+      onDone();
+      toast({ kind: "gift", title: "Ставка принята", message: `${fmt(value)} ★ · держим 30 минут` });
+      onClose();
+    } finally {
+      setBusy(false);
     }
-    toast({ kind: "gift", title: "Ставка принята", message: `${fmt(value)} ★ · держим 30 минут` });
-    onClose();
   };
 
-  const buyout = () => {
+  const buyout = async () => {
     const price = lot.buyout;
-    if (!price) return;
-    if (!spendStars(price)) {
-      toast({ kind: "error", title: "Недостаточно звёзд", message: `Нужно ${fmt(price)} ★` });
+    if (!price || busy) return;
+
+    // a test gift costs what its row says — the same price the market shows
+    const rowPrice = customRowPrice(lot.item_id, customRows);
+    const charge = rowPrice != null ? rowPrice : price;
+    if (charge > stars + myHold) {
+      toast({ kind: "error", title: "Недостаточно звёзд", message: `Нужно ${fmt(charge)} ★` });
       return;
     }
-    if (gift) addItem(gift.id, "market");
-    void placeBid(lot.id, price);
-    toast({ kind: "gift", title: "Куплено сразу", message: `${lot.item_name} · ${fmt(price)} ★` });
-    onClose();
+
+    setBusy(true);
+    try {
+      const res = await placeBid(lot.id, price);
+      if (res.error) {
+        toast({ kind: "error", title: "Не выкуплено", message: bidError(res.error) });
+        return;
+      }
+      // the raise above was over the held bid, so only the difference is new
+      if (myHold > 0) addStars(myHold);
+      spendStars(Math.max(0, charge - myHold));
+      if (gift) addItem(gift.id, "market");
+      // закрываем лот сами: выкуп не должен ждать, пока истечёт таймер
+      if (supabase) await supabase.from("auctions").update({ sold: true }).eq("id", lot.id);
+      onDone();
+      toast({ kind: "gift", title: "Куплено сразу", message: `${lot.item_name} · ${fmt(price)} ★` });
+      onClose();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -293,7 +361,7 @@ function AuctionSheet({
                 {upcoming ? "откроется через" : "до конца"}
               </p>
               <p className={`font-extrabold tabular-nums ${upcoming ? "text-violet" : "text-white/80"}`}>
-                {upcoming ? shortLeft(opens) : ended ? "завершён" : shortLeft(closes)}
+                {upcoming ? shortLeft(opens) : shortLeft(auctionClosesIn(lot))}
               </p>
             </div>
           </div>
@@ -303,10 +371,6 @@ function AuctionSheet({
           {upcoming ? (
             <p className="mt-3 rounded-xl border border-violet/25 bg-violet/[0.07] px-3 py-2.5 text-center text-[11px] font-bold leading-relaxed text-violet/90">
               Предстоящий аукцион. Купить и поставить нельзя, пока лот не откроется — следи за ним в маркете.
-            </p>
-          ) : ended ? (
-            <p className="mt-3 rounded-xl bg-white/5 py-2.5 text-center text-[11.5px] font-bold text-white/35">
-              Лот завершён
             </p>
           ) : (
             <>
@@ -318,17 +382,23 @@ function AuctionSheet({
                   onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
                   className="h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 text-[12.5px] font-bold tabular-nums outline-none placeholder:text-white/20 focus:border-neon/40"
                 />
-                <Button size="sm" onClick={() => void bid()} className="h-10">
-                  Ставка
+                <Button size="sm" onClick={() => void bid()} disabled={busy} className="h-10">
+                  {busy ? "…" : "Ставка"}
                 </Button>
               </div>
               {lot.buyout != null && (
                 <button
-                  onClick={buyout}
-                  className="mt-2 w-full rounded-xl border border-violet/30 bg-violet/10 py-2 text-[11.5px] font-bold text-violet hover:bg-violet/20"
+                  onClick={() => void buyout()}
+                  disabled={busy}
+                  className="mt-2 w-full rounded-xl border border-violet/30 bg-violet/10 py-2 text-[11.5px] font-bold text-violet hover:bg-violet/20 disabled:opacity-50"
                 >
                   Купить сразу · {fmt(lot.buyout)} ★
                 </button>
+              )}
+              {mine && (
+                <p className="mt-2 text-center text-[10px] font-bold text-neon/80">
+                  Твоя ставка держит лот · перебьют — звёзды вернутся
+                </p>
               )}
               <p className="mt-2 text-center text-[10px] leading-relaxed text-white/20">
                 Ставка держит лот 30 минут · не перебили — подарок твой
@@ -339,4 +409,15 @@ function AuctionSheet({
       </motion.div>
     </AnimatePresence>
   );
+}
+
+/** Server errors are English; keep the shop readable. */
+function bidError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("not started")) return "Лот ещё не открылся";
+  if (m.includes("finished") || m.includes("closed")) return "Лот уже завершён";
+  if (m.includes("too low")) return "Ставка ниже текущей";
+  if (m.includes("above buyout")) return "Это уже цена выкупа — нажми «Купить сразу»";
+  if (m.includes("own lot")) return "Это твой лот";
+  return message;
 }

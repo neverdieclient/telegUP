@@ -1,13 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { RARITY_META, RARITY_ORDER, SHOP_ITEMS, type Gift, type Rarity } from "../data/gifts";
-import { isPurchasable } from "../data/customGifts";
+import { isPurchasable, loadCustomGifts } from "../data/customGifts";
 import { modelOptions } from "../lib/rng";
 import { useAllGifts, useCustomGiftRows } from "../lib/useCatalog";
 import { useIsOwnerEmail } from "../lib/useIsOwnerEmail";
 import { MarketAuctions } from "../components/MarketAuctions";
-import { auctionOpensIn, useLiveAuctions } from "../lib/auctions";
+import { auctionOpensIn, isLotLive, useLiveAuctions } from "../lib/auctions";
 import type { AuctionRow } from "../lib/players";
+import { useGiftInbox } from "../lib/useGiftInbox";
 import { useBoost } from "../lib/starBoost";
 import { useGame } from "../store/useGame";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
@@ -23,6 +24,7 @@ const FILTERS: { id: Filter; label: string }[] = [
 const TABS = [
   { id: "gift", label: "Подарки" },
   { id: "model", label: "Модели" },
+  { id: "auction", label: "Аукцион" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -158,19 +160,30 @@ export default function Market() {
   }, [customRows, owner]);
 
   const boost = useBoost();
-  const auctions = useLiveAuctions();
+  const { lots: auctions, closedAt: lotsClosedAt } = useLiveAuctions();
 
   /** auction lots, keyed by gift id — cards get a «скоро» / «аукцион» tag */
   const lotByGift = useMemo(() => {
     const map = new Map<string, AuctionRow>();
     for (const lot of auctions) {
-      if (lot.sold || lot.cancelled) continue;
+      if (!isLotLive(lot)) continue;
       const prev = map.get(lot.item_id);
       const opens = auctionOpensIn(lot);
       if (!prev || opens > 0) map.set(lot.item_id, lot);
     }
     return map;
   }, [auctions]);
+
+  /**
+   * A closed lot changes what is buyable: a test gift stops being buyable and
+   * its winner's inventory has to reach the cloud right away.
+   */
+  const lotInbox = useGiftInbox();
+  useEffect(() => {
+    if (!lotsClosedAt) return;
+    void loadCustomGifts(true);
+    lotInbox.flush();
+  }, [lotsClosedAt, lotInbox]);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<"price" | "priceDesc" | "name">("price");
@@ -233,7 +246,7 @@ export default function Market() {
       </header>
 
       {/* auction lots the owner schedules from the admin panel */}
-      <MarketAuctions />
+      <MarketAuctions customRows={customRows} />
 
       {/* «двойные звёзды» — live, owner-switched payout boost */}
       <AnimatePresence>
@@ -290,7 +303,7 @@ export default function Market() {
         ))}
       </div>
 
-      <div className="flex flex-col gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className={tab === "auction" ? "hidden" : "flex flex-col gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] p-3 sm:flex-row sm:items-center sm:justify-between"}>
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
           {FILTERS.map((f) => (
             <button
@@ -328,7 +341,7 @@ export default function Market() {
         </div>
       </div>
 
-      <section className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <section className={`${tab === "auction" ? "hidden" : "grid"} grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5`}>
         {list.slice(0, 300).map((g, i) => {
           const meta = RARITY_META[g.rarity];
             const locked = lockedSlugs.has(g.slug);
@@ -405,16 +418,25 @@ export default function Market() {
         })}
       </section>
 
-      {list.length > 300 && (
+      {tab !== "auction" && list.length > 300 && (
         <p className="text-center text-[11px] text-white/25">
           Показано 300 из {list.length.toLocaleString("ru-RU")} — выберите коллекцию или редкость, чтобы сузить.
         </p>
       )}
 
-      <p className="rounded-2xl border border-white/6 bg-white/[0.02] p-3.5 text-center text-[10.5px] leading-relaxed text-white/25">
-        Цены в TON взяты из реального Fragment-подобного маркета и приведены для атмосферы. Покупка идёт за
-        локальные звёзды и не создаёт никаких обязательств.
-      </p>
+      {tab !== "auction" && (
+        <p className="rounded-2xl border border-white/6 bg-white/[0.02] p-3.5 text-center text-[10.5px] leading-relaxed text-white/25">
+          Цены в TON взяты из реального Fragment-подобного маркета и приведены для атмосферы. Покупка идёт за
+          локальные звёзды и не создаёт никаких обязательств.
+        </p>
+      )}
+
+      {/* auction tab: the lots themselves, in place of the gift grid */}
+      {tab === "auction" && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+          <MarketAuctions customRows={customRows} />
+        </motion.div>
+      )}
 
       <PremiumSection />
 
