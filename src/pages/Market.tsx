@@ -35,8 +35,8 @@ type TabId = (typeof TABS)[number]["id"];
  * opens the full model list of its collection, so clicking any gift always
  * shows something better to buy.
  */
-function upgradedOptions(gift: Gift): Gift[] {
-  const models = modelOptions(gift).filter((m) => m.id !== gift.id);
+function upgradedOptions(gift: Gift, pool: Gift[]): Gift[] {
+  const models = modelOptions(gift, pool).filter((m) => m.id !== gift.id);
   return models
     .filter((m) => m.stars >= gift.stars)
     .sort((a, b) => a.stars - b.stars);
@@ -227,7 +227,7 @@ export default function Market() {
     }, 320);
   };
 
-  const detailModels = useMemo(() => (detail ? upgradedOptions(detail) : []), [detail]);
+  const detailModels = useMemo(() => (detail ? upgradedOptions(detail, GIFTS) : []), [detail, GIFTS]);
 
   return (
     <div className="space-y-4">

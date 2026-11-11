@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { BADGE_BY_ID, RARITY_META, RARITY_ORDER, SHOP_USERNAMES, type Gift, type Rarity } from "../data/gifts";
-import { useGiftIndex } from "../lib/useCatalog";
+import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
 import { MAX_PINNED, useGame } from "../store/useGame";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
 import { UsernameLootbox } from "../components/gifts/UsernameLootbox";
@@ -43,6 +43,7 @@ const SOURCE_LABEL: Record<string, string> = {
 export default function Inventory() {
   const inventory = useGame((s) => s.inventory);
   const GIFT_BY_ID = useGiftIndex();
+  const allGifts = useAllGifts();
   const sellItem = useGame((s) => s.sellItem);
   const sellAll = useGame((s) => s.sellAll);
   const togglePin = useGame((s) => s.togglePin);
@@ -120,8 +121,12 @@ export default function Inventory() {
     [inventory],
   );
 
-  /** Every nicer model of the selected gift, cheapest first. */
-  const targets = useMemo(() => (activeGift ? modelTargets(activeGift) : []), [activeGift]);
+  /** Every nicer model of the selected gift, cheapest first — owner-made
+   *  models included, so a freshly imported folder works right away. */
+  const targets = useMemo(
+    () => (activeGift ? modelTargets(activeGift, allGifts) : []),
+    [activeGift, allGifts],
+  );
 
   const bandTargets = useMemo(() => {
     if (!activeGift || band === "all") return targets;

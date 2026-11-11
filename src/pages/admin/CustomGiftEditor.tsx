@@ -28,6 +28,26 @@ const EMPTY: CustomGiftDraft = {
 };
 
 const label = "text-[10.5px] font-bold uppercase tracking-[0.14em] text-white/35";
+
+/**
+ * Upgrade models are always worth more than the gift they belong to, so the
+ * suggested price is the gift price plus this markup. Without it a 3 700★ gift
+ * could end up with 2 000★ «upgrades», which the upgrade ladder then refuses as
+ * targets and the owner sees «нет моделей» on a gift that clearly has them.
+ */
+const AUTO_MODEL_MULT = 1.2;
+
+/** Default price for a model: 20 % above its gift, never below it. */
+export function suggestModelPrice(giftPrice: number): number {
+  const base = Math.max(0, Math.round(giftPrice));
+  return Math.max(base + 10, Math.round(base * AUTO_MODEL_MULT));
+}
+
+/** Model price that is guaranteed to beat the gift price. */
+export function priceAboveGift(price: number, giftPrice: number): number {
+  const floor = Math.max(1, Math.round(giftPrice) + 1);
+  return Math.max(floor, Math.round(price) || 0);
+}
 const field =
   "w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40";
 
@@ -123,10 +143,13 @@ function ImageField({
  * folder of «Gold Adesanya.webp», «UFC World.webp»… is added in one go.
  */
 function BulkModelImport({
+  giftPrice,
   defaults,
   onAdd,
   onBusy,
 }: {
+  /** price of the gift itself — models are always a multiple of it */
+  giftPrice: number;
   defaults: { price: number; rarityPct: number };
   onAdd: (models: CustomModel[]) => void;
   onBusy: (busy: boolean) => void;
@@ -135,10 +158,21 @@ function BulkModelImport({
   const filesRef = useRef<HTMLInputElement | null>(null);
   const [price, setPrice] = useState(defaults.price);
   const [rarityPct, setRarityPct] = useState(defaults.rarityPct);
+  const [autoPrice, setAutoPrice] = useState(true);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
   const busy = progress !== null;
+
+  // with auto-price on, the field always sits just above the gift price
+  useEffect(() => {
+    if (autoPrice) setPrice(suggestModelPrice(giftPrice));
+  }, [autoPrice, giftPrice]);
+
+  // auto-price is a convenience, never a constraint: a field left below the
+  // gift price is silently lifted so an upgrade is never cheaper than the gift
+  const floorPrice = Math.max(2, Math.round(giftPrice) + 1);
+  const step = () => setPrice((p) => Math.max(floorPrice, Math.round(p)));
 
   const handle = async (list: FileList | null) => {
     const picked = Array.from(list ?? []).filter((f) => isImageFile(f.name, f.type));
@@ -146,6 +180,7 @@ function BulkModelImport({
       setErrors(["В выбранной папке нет картинок (webp / png / jpg)"]);
       return;
     }
+    const unit = Math.max(floorPrice, Math.round(price));
     setErrors([]);
     setProgress({ done: 0, total: picked.length });
     onBusy(true);
@@ -157,7 +192,7 @@ function BulkModelImport({
       onAdd(
         res.results.map((r) => ({
           name: modelNameFromFile(r.fileName),
-          price: Math.max(1, Math.round(price)),
+          price: unit,
           rarityPct,
           image: r.url,
         })),
@@ -176,16 +211,36 @@ function BulkModelImport({
         <span className="text-[10px] text-white/30">все картинки за раз</span>
       </div>
 
+      <label className="flex items-center gap-2 rounded-lg border border-white/8 bg-black/30 px-2 py-1.5">
+        <input
+          type="checkbox"
+          checked={autoPrice}
+          onChange={(e) => setAutoPrice(e.target.checked)}
+          className="size-3.5 accent-neon"
+        />
+        <span className="text-[10.5px] font-bold text-white/60">
+          Цена автоматически: подарок +{Math.round((AUTO_MODEL_MULT - 1) * 100)}%
+          {giftPrice > 0 && (
+            <span className="ml-1 font-normal text-white/30">
+              ({giftPrice.toLocaleString("ru-RU")}★ → {suggestModelPrice(giftPrice).toLocaleString("ru-RU")}★)
+            </span>
+          )}
+        </span>
+      </label>
+
       <div className="grid grid-cols-2 gap-1.5">
         <label className="space-y-1">
-          <span className="block text-[10px] text-white/40">Цена ★ для всех</span>
+          <span className="block text-[10px] text-white/40">
+            Цена ★ для всех{!autoPrice && price < floorPrice ? " · не ниже подарка" : ""}
+          </span>
           <input
             type="number"
-            min={1}
+            min={floorPrice}
             value={price}
-            disabled={busy}
-            onChange={(e) => setPrice(Math.max(0, Number(e.target.value) || 0))}
-            className={field}
+            disabled={busy || autoPrice}
+            onChange={(e) => setPrice(Math.max(floorPrice, Number(e.target.value) || 0))}
+            onBlur={step}
+            className={`${field} disabled:opacity-50`}
           />
         </label>
         <label className="space-y-1">
@@ -312,7 +367,10 @@ export function CustomGiftEditor() {
   const addModel = () =>
     setDraft((d) => ({
       ...d,
-      models: [...d.models, { name: "", price: Math.max(d.price * 2, 100), rarityPct: 10, image: null }],
+      models: [
+        ...d.models,
+        { name: "", price: Math.max(d.price * 2, suggestModelPrice(d.price), 100), rarityPct: 10, image: null },
+      ],
     }));
 
   const removeModel = (i: number) =>
@@ -351,8 +409,13 @@ export function CustomGiftEditor() {
       return;
     }
     setBusy(true);
+    // an upgrade must never be cheaper than the gift it upgrades, otherwise the
+    // upgrade screen refuses it as a target — lift every model above the price
+    const models = draft.models
+      .filter((m) => m.name.trim())
+      .map((m) => ({ ...m, price: priceAboveGift(m.price, draft.price) }));
     const res = await saveCustomGift(
-      { ...draft, models: draft.models.filter((m) => m.name.trim()) },
+      { ...draft, models },
       editingId ?? undefined,
     );
     setBusy(false);
@@ -585,8 +648,9 @@ export function CustomGiftEditor() {
           </div>
 
           <BulkModelImport
+            giftPrice={draft.price}
             defaults={{
-              price: Math.max(draft.price * 2, 100),
+              price: suggestModelPrice(draft.price),
               rarityPct: 10,
             }}
             onAdd={addModels}
@@ -615,10 +679,11 @@ export function CustomGiftEditor() {
               <div className="grid grid-cols-2 gap-1.5">
                 <input
                   type="number"
-                  min={1}
+                  min={draft.price + 1}
                   value={m.price}
                   onChange={(e) => patchModel(i, { price: Math.max(0, Number(e.target.value) || 0) })}
-                  placeholder="Цена ★"
+                  onBlur={() => patchModel(i, { price: priceAboveGift(m.price, draft.price) })}
+                  placeholder={`Цена ★ (от ${(draft.price + 1).toLocaleString("ru-RU")})`}
                   className={field}
                 />
                 <input
@@ -641,6 +706,7 @@ export function CustomGiftEditor() {
           ))}
           <p className="text-[10px] text-white/25">
             Редкость: ≤2% — мифик, ≤6% — легендарный, ≤15% — эпик, ≤40% — редкий, больше — обычный.
+            Цена улучшения всегда выше цены подарка — иначе оно не появится в списке улучшений.
           </p>
         </div>
 
