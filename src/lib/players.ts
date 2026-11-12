@@ -26,6 +26,8 @@ export type PlayerRow = {
   name_gradient?: string | null;
   badge_glow?: string | null;
   profile_banner?: string | null;
+  /** public URL of the uploaded avatar (bucket `avatars`) */
+  avatar_url?: string | null;
   /** privacy switch: whether other players may browse this inventory */
   show_inventory?: boolean | null;
 };
@@ -393,6 +395,7 @@ export type CloudSave = {
   name_gradient: string | null;
   badge_glow: string | null;
   profile_banner: string | null;
+  avatar_url: string | null;
   owner_synced_at: string | null;
 };
 
@@ -525,6 +528,58 @@ export async function ownerSetCosmetics(
     p_set_profile_banner: patch.profileBanner !== undefined,
   });
   return error ? { error: error.message } : {};
+}
+
+/**
+ * Upload a picture from disk into the `avatars` bucket and return its public URL.
+ *
+ * Files live under the uploader's own folder (`<uuid>/…`), which is exactly the
+ * path prefix the storage policy in `supabase/profile-avatars.sql` allows. The
+ * owner may also upload into another player's folder.
+ */
+export async function uploadAvatar(
+  file: File,
+  ownerId: string,
+): Promise<{ url?: string; error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const ext = (file.name.split(".").pop() || "webp").toLowerCase();
+  const path = `${ownerId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from("avatars").upload(path, file, {
+    cacheControl: "31536000",
+    upsert: false,
+    contentType: file.type || "image/webp",
+  });
+  if (error) return { error: error.message };
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  return { url: data.publicUrl };
+}
+
+/** Save the uploaded avatar for the signed-in player (their own row only). */
+export async function setMyAvatar(url: string | null): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("player_set_avatar", { p_url: url });
+  return error ? { error: error.message } : {};
+}
+
+/** Owner: set the avatar of any player (or themself) from the admin panel. */
+export async function ownerSetAvatar(
+  targetId: string,
+  url: string | null,
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_set_avatar", {
+    target_id: targetId,
+    p_avatar_url: url,
+  });
+  return error ? { error: error.message } : {};
+}
+
+/** True for files we can use as an avatar. */
+export function isAvatarFile(file: File): boolean {
+  return (
+    file.type.startsWith("image/") ||
+    /\.(webp|png|jpe?g|gif|avif)$/i.test(file.name)
+  );
 }
 
 export type AuctionKind = "gift" | "username" | "number";

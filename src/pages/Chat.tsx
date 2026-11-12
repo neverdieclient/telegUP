@@ -12,6 +12,7 @@ import {
   type PlayerRow,
 } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
+import { Avatar } from "../components/profile/Cosmetics";
 
 /** How often the open chat re-reads new messages. */
 const POLL_MS = 5_000;
@@ -76,8 +77,14 @@ function AuthorCard({ id, onClose }: { id: string; onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative h-24 bg-gradient-to-br from-violet to-[#3f2299]">
-          <div className="absolute -bottom-8 left-4 grid size-16 place-items-center rounded-2xl border-4 border-ink-2 bg-gradient-to-br from-violet to-[#3f2299] font-display text-2xl font-black">
-            {nick.slice(0, 1).toUpperCase()}
+          <div className="absolute -bottom-8 left-4 rounded-2xl border-4 border-ink-2">
+            <Avatar
+              src={self ? profile.avatarUrl : p?.avatar_url}
+              nickname={nick}
+              size={64}
+              rounded="rounded-xl"
+              className="text-2xl"
+            />
           </div>
         </div>
         <div className="px-4 pb-4 pt-10">

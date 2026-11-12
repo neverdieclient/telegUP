@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useGame } from "../store/useGame";
 import { RARITY_META, DISCLAIMER } from "../data/gifts";
 import { useGiftIndex } from "../lib/useCatalog";
 import { CheckMark } from "../components/ui/CheckMark";
 import { StarIcon, GiftArt } from "../components/gifts/GiftArt";
-import { useAuth, signOut, fetchPlayer, setInventoryVisibility } from "../lib/players";
+import { useAuth, signOut, fetchPlayer, setInventoryVisibility, uploadAvatar, setMyAvatar, isAvatarFile } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 import { Row, Toggle, MARKS } from "./profile/rows";
 import { THEMES } from "../lib/theme";
 import {
+  Avatar,
   GradientNick,
   GlowBadge,
   ProfileBannerLayer,
@@ -35,10 +36,13 @@ export default function ProfilePage() {
   const chooseDevice = useGame((s) => s.chooseDevice);
   const showInventory = useGame((s) => s.profile.showInventory);
   const setShowInventory = useGame((s) => s.setShowInventory);
+  const setAvatar = useGame((s) => s.setAvatar);
   const { user } = useAuth();
 
   const [draft, setDraft] = useState(profile.nickname);
   const [editing, setEditing] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const avatarInput = useRef<HTMLInputElement>(null);
   const myPinned = useMyPinnedGifts();
 
   const value = useMemo(
@@ -103,6 +107,56 @@ export default function ProfilePage() {
 
   const activeMarks = MARKS.filter((m) => m.id === "basic" && profile.marks.includes("basic"));
 
+  /**
+   * Upload a picture and make it the avatar.
+   *
+   * Without an online account there is nowhere to put the file (a data URL
+   * would blow up localStorage on the next save), so the button says so
+   * instead of silently losing the picture on reload.
+   */
+  const pickAvatar = async (file: File) => {
+    if (!isAvatarFile(file)) {
+      toast({ kind: "error", title: "Не картинка", message: "png, jpg, webp, gif или avif" });
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      toast({ kind: "error", title: "Слишком большой файл", message: "Максимум 4 МБ" });
+      return;
+    }
+    if (!onlineEnabled || !user) {
+      toast({
+        kind: "error",
+        title: "Нужен онлайн-аккаунт",
+        message: "Аватарка хранится в облаке — войди в аккаунт",
+      });
+      return;
+    }
+
+    setAvatarBusy(true);
+    const up = await uploadAvatar(file, user.id);
+    if (!up.url) {
+      setAvatarBusy(false);
+      toast({ kind: "error", title: "Загрузка не удалась", message: up.error ?? "Запусти supabase/profile-avatars.sql" });
+      return;
+    }
+    const saved = await setMyAvatar(up.url);
+    setAvatarBusy(false);
+    if (saved.error) {
+      toast({ kind: "error", title: "Не сохранилось", message: "Запусти supabase/profile-avatars.sql" });
+      return;
+    }
+    setAvatar(up.url);
+    toast({ kind: "success", title: "Аватарка обновлена" });
+  };
+
+  const resetAvatar = async () => {
+    setAvatar(null);
+    if (!onlineEnabled || !user) return;
+    const res = await setMyAvatar(null);
+    if (res.error) toast({ kind: "error", title: "Не сохранилось", message: res.error });
+    else toast({ kind: "success", title: "Аватарка убрана" });
+  };
+
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4">
       <header>
@@ -127,9 +181,47 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
             <div className="relative shrink-0">
               <div className="rounded-[24px] bg-gradient-to-br from-neon/70 via-violet/70 to-rare/60 p-[2px]">
-                <span className="grid size-[92px] place-items-center rounded-[22px] bg-[#0d0d10] font-display text-[38px] font-black">
-                  {profile.nickname.slice(0, 1).toUpperCase()}
+                <span className="block rounded-[22px] bg-[#0d0d10]">
+                  <Avatar
+                    src={profile.avatarUrl}
+                    nickname={profile.nickname}
+                    size={92}
+                    rounded="rounded-[22px]"
+                    className="text-[38px]"
+                  />
                 </span>
+              </div>
+
+              <input
+                ref={avatarInput}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void pickAvatar(file);
+                }}
+              />
+
+              <div className="mt-2 flex flex-col gap-1">
+                <button
+                  type="button"
+                  disabled={avatarBusy}
+                  onClick={() => avatarInput.current?.click()}
+                  className="rounded-lg border border-neon/30 bg-neon/10 px-2 py-1 text-[10px] font-bold text-neon transition hover:bg-neon/20 disabled:opacity-40"
+                >
+                  {avatarBusy ? "загрузка…" : profile.avatarUrl ? "сменить" : "загрузить"}
+                </button>
+                {profile.avatarUrl && !avatarBusy && (
+                  <button
+                    type="button"
+                    onClick={() => void resetAvatar()}
+                    className="rounded-lg border border-white/10 px-2 py-1 text-[10px] font-bold text-white/35 transition hover:text-white/70"
+                  >
+                    убрать
+                  </button>
+                )}
               </div>
             </div>
 

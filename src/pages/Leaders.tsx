@@ -6,6 +6,7 @@ import { useGiftIndex } from "../lib/useCatalog";
 import { GiftArt } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
 import {
+  Avatar,
   GradientNick,
   GlowBadge,
   ProfileBannerLayer,
@@ -25,12 +26,12 @@ const MARKS: CheckMarkKind[] = ["basic"];
 
 function PlayerAvatar({ p, size = 48 }: { p: PlayerRow; size?: number }) {
   return (
-    <span
-      className="grid shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet to-[#3f2299] font-display font-black"
-      style={{ width: size, height: size, fontSize: size * 0.42 }}
-    >
-      {p.nickname.slice(0, 1).toUpperCase()}
-    </span>
+    <Avatar
+      src={p.avatar_url}
+      nickname={p.nickname || p.username || "?"}
+      size={size}
+      rounded="rounded-2xl"
+    />
   );
 }
 

@@ -11,6 +11,7 @@ import { Button } from "../components/ui/Button";
 import { boostedChance, chance, modelUpgradeChance, modelTargets, MODEL_BANDS, type ModelBand } from "../lib/rng";
 import { sendGift, searchPlayers, type PlayerRow } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
+import { Avatar } from "../components/profile/Cosmetics";
 
 type Filter = "all" | Rarity;
 type Sort = "new" | "value" | "name";
@@ -855,9 +856,13 @@ export default function Inventory() {
                             on ? "border-neon/50 bg-neon/10" : "border-white/8 bg-white/[0.02] hover:border-white/20"
                           }`}
                         >
-                          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white/8 text-[12px] font-black uppercase text-white/70">
-                            {(p.nickname || p.username || "?").slice(0, 1)}
-                          </span>
+                          <Avatar
+                            src={p.avatar_url}
+                            nickname={p.nickname || p.username || "?"}
+                            size={32}
+                            rounded="rounded-full"
+                            className="text-[12px]"
+                          />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[12.5px] font-extrabold">@{p.nickname || p.username}</span>
                             <span className="block truncate text-[10px] text-white/30">

@@ -4,6 +4,7 @@ import { SHOP_ITEMS, SHOP_USERNAMES, BADGE_BY_ID, type PurchasedShopItem } from 
 import { useGame } from "../store/useGame";
 import { StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
+import { Avatar } from "../components/profile/Cosmetics";
 
 export default function Shop() {
   const stars = useGame((s) => s.stars);
@@ -56,9 +57,7 @@ export default function Shop() {
       <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-neon/[0.06] to-transparent p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-violet to-[#3f2299] text-lg font-black">
-              {profile.nickname.slice(0, 1).toUpperCase()}
-            </span>
+            <Avatar src={profile.avatarUrl} nickname={profile.nickname} size={48} rounded="rounded-2xl" className="text-lg" />
             <div>
               <p className="text-[15px] font-extrabold">@{profile.nickname}</p>
               <p className="text-[11px] text-white/35">

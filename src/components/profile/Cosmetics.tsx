@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useGame } from "../../store/useGame";
 import { useGiftIndex } from "../../lib/useCatalog";
 import { GiftArt } from "../gifts/GiftArt";
@@ -13,6 +13,69 @@ import { badgeGlow, nameGradient, profileBanner } from "../../data/cosmetics";
  * see the same thing. Keeping the drawing here — instead of in each screen —
  * is what makes "я вижу, значит и другие видят" true instead of hopeful.
  */
+
+/**
+ * The player's picture.
+ *
+ * Every screen used to paint the first letter of the nickname instead; this is
+ * the single place that decides between the uploaded picture and that letter,
+ * so an avatar shows up in the header, the dashboard, the shop, the leaderboard,
+ * the chat and the inventory picker all at once.
+ *
+ * `src` is the public storage URL (`profiles.avatar_url`). No avatar — or an
+ * image that fails to load — silently falls back to the letter, never to a
+ * broken-image icon.
+ */
+export function Avatar({
+  src,
+  nickname,
+  size = 48,
+  rounded = "rounded-2xl",
+  className = "",
+  ring = false,
+}: {
+  src?: string | null;
+  nickname: string;
+  size?: number;
+  rounded?: string;
+  className?: string;
+  /** draws the violet gradient border used on the profile header */
+  ring?: boolean;
+}) {
+  const [broken, setBroken] = useState(false);
+
+  // a new url deserves a new attempt, even if the previous one failed
+  useEffect(() => setBroken(false), [src]);
+
+  const showImage = Boolean(src) && !broken;
+  const inner = (
+    <span
+      className={`grid shrink-0 place-items-center overflow-hidden bg-gradient-to-br from-violet to-[#3f2299] font-display font-black ${rounded} ${className}`}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
+    >
+      {showImage ? (
+        <img
+          src={src as string}
+          alt={`@${nickname}`}
+          loading="lazy"
+          decoding="async"
+          onError={() => setBroken(true)}
+          className="size-full object-cover"
+        />
+      ) : (
+        nickname.slice(0, 1).toUpperCase()
+      )}
+    </span>
+  );
+
+  if (!ring) return inner;
+
+  return (
+    <span className="inline-grid shrink-0 place-items-center rounded-[24px] bg-gradient-to-br from-neon/70 via-violet/70 to-rare/60 p-[2px]">
+      {inner}
+    </span>
+  );
+}
 
 /** Nickname text painted with a preset gradient (falls back to plain white). */
 export function GradientNick({

@@ -6,6 +6,7 @@ import { StarIcon } from "./gifts/GiftArt";
 import { ToastStack } from "./Toasts";
 import { AdSlot } from "./AdSlot";
 import { DISCLAIMER } from "../data/gifts";
+import { Avatar } from "./profile/Cosmetics";
 
 type NavItem = { to: string; label: string; short: string; icon: string };
 
@@ -86,9 +87,7 @@ function Header() {
         <div className="flex items-center gap-2">
           <BalancePill />
           <div className="hidden items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-2.5 py-1.5 sm:flex">
-            <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-violet to-[#4b2bb3] text-[11px] font-black">
-              {profile.nickname.slice(0, 1).toUpperCase()}
-            </span>
+            <Avatar src={profile.avatarUrl} nickname={profile.nickname} size={28} rounded="rounded-lg" className="text-[11px]" />
             <div className="leading-tight">
               <p className="max-w-[110px] truncate text-[12px] font-bold">@{profile.nickname}</p>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-neon/80">

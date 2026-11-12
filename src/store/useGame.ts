@@ -115,6 +115,8 @@ export type Profile = {
   badgeGlow: string | null;
   /** header banner preset, see src/data/cosmetics.ts */
   profileBanner: string | null;
+  /** public URL of the uploaded avatar (bucket `avatars`); null = letter fallback */
+  avatarUrl: string | null;
   /** short status line under the nickname */
   bio: string | null;
   purchasedUsernames: string[];
@@ -254,6 +256,8 @@ type State = {
     profileBanner?: string | null;
   }) => void;
   setBio: (bio: string | null) => void;
+  /** Uploaded avatar URL (null falls back to the nickname letter). */
+  setAvatar: (url: string | null) => void;
   /** Privacy switch: «Показывать мои подарки другим». */
   setShowInventory: (show: boolean) => void;
   /** Wipe an account's cosmetics back to defaults. */
@@ -286,6 +290,7 @@ type State = {
     nameGradient?: string | null;
     badgeGlow?: string | null;
     profileBanner?: string | null;
+    avatarUrl?: string | null;
     /** owner-granted upgrade luck (100 = honest). Optional so older callers keep working. */
     upgradeLuck?: number;
   }) => void;
@@ -324,6 +329,7 @@ type State = {
     name_gradient?: string | null;
     badge_glow?: string | null;
     profile_banner?: string | null;
+    avatar_url?: string | null;
   }) => void;
   /** verification marks: basic / premium / owner / crown */
   toggleMark: (mark: string) => void;
@@ -397,6 +403,7 @@ export const initialState = {
     nameGradient: null as string | null,
     badgeGlow: null as string | null,
     profileBanner: null as string | null,
+    avatarUrl: null as string | null,
     bio: null as string | null,
     purchasedUsernames: [] as string[],
     collectibleUsername: null,
@@ -881,6 +888,8 @@ export const useGame = create<State>()(
 
       setBio: (bio) => set((s) => ({ profile: { ...s.profile, bio: bio?.slice(0, 60) ?? null } })),
 
+      setAvatar: (url) => set((s) => ({ profile: { ...s.profile, avatarUrl: url || null } })),
+
       setShowInventory: (show) =>
         set((s) => ({ profile: { ...s.profile, showInventory: show } })),
 
@@ -893,6 +902,7 @@ export const useGame = create<State>()(
             nameGradient: null,
             badgeGlow: null,
             profileBanner: null,
+            avatarUrl: null,
             bio: null,
             altNames: [],
           },
@@ -968,6 +978,7 @@ export const useGame = create<State>()(
               nameGradient: save.name_gradient ?? s.profile.nameGradient,
               badgeGlow: save.badge_glow ?? s.profile.badgeGlow,
               profileBanner: save.profile_banner ?? s.profile.profileBanner,
+              avatarUrl: save.avatar_url ?? s.profile.avatarUrl,
             },
           };
         }),
@@ -997,7 +1008,8 @@ export const useGame = create<State>()(
             server.gradient === s.profile.gradient &&
             (server.nameGradient === undefined || server.nameGradient === s.profile.nameGradient) &&
             (server.badgeGlow === undefined || server.badgeGlow === s.profile.badgeGlow) &&
-            (server.profileBanner === undefined || server.profileBanner === s.profile.profileBanner);
+            (server.profileBanner === undefined || server.profileBanner === s.profile.profileBanner) &&
+            (server.avatarUrl === undefined || server.avatarUrl === s.profile.avatarUrl);
 
           // nothing changed: keep the same object so React does not re-render
           if (
@@ -1037,6 +1049,7 @@ export const useGame = create<State>()(
               nameGradient: server.nameGradient ?? s.profile.nameGradient,
               badgeGlow: server.badgeGlow ?? s.profile.badgeGlow,
               profileBanner: server.profileBanner ?? s.profile.profileBanner,
+              avatarUrl: server.avatarUrl ?? s.profile.avatarUrl,
             },
             // luck is a pure owner grant: whatever the server says wins, and
             // a normal 100 is written too so a revoked boost actually drops.
@@ -1153,6 +1166,7 @@ export const useGame = create<State>()(
           nameGradient: s.profile?.nameGradient ?? null,
           badgeGlow: s.profile?.badgeGlow ?? null,
           profileBanner: s.profile?.profileBanner ?? null,
+          avatarUrl: s.profile?.avatarUrl ?? null,
           bio: s.profile?.bio ?? null,
         };
         if (profile.anonymousNumber && !profile.phoneNumber) profile.phoneNumber = generateAnonymousNumber();

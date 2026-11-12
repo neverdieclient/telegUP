@@ -116,6 +116,7 @@ export function useGiftInbox(): { flush: () => void } {
               nameGradient: row.name_gradient ?? null,
               badgeGlow: row.badge_glow ?? null,
               profileBanner: row.profile_banner ?? null,
+              avatarUrl: row.avatar_url ?? null,
             });
           }
         }

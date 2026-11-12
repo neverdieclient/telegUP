@@ -1,11 +1,19 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useGame } from "../store/useGame";
-import { RARITY_META, BADGE_BY_ID } from "../data/gifts";
+import { RARITY_META } from "../data/gifts";
 import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
 import { StarIcon, GiftArt } from "../components/gifts/GiftArt";
 import { CheckMark } from "../components/ui/CheckMark";
 import { FortuneGame } from "../components/FortuneGame";
+import {
+  Avatar,
+  GradientNick,
+  GlowBadge,
+  PinnedStrip,
+  ProfileBannerLayer,
+  useMyPinnedGifts,
+} from "../components/profile/Cosmetics";
 
 /* --------------------------------------------------------------- layout bits */
 
@@ -67,6 +75,7 @@ export default function Dashboard() {
   const { stars, inventory, profile, stats, joinedAt, lastFreeCaseAt } = useGame();
   const GIFT_BY_ID = useGiftIndex();
   const GIFTS = useAllGifts();
+  const myPinned = useMyPinnedGifts();
 
   const inventoryValue = useMemo(
     () => inventory.reduce((acc, i) => acc + (GIFT_BY_ID[i.giftId]?.stars ?? 0), 0),
@@ -87,76 +96,81 @@ export default function Dashboard() {
   return (
     <div className="space-y-4">
       {/* ------------------------------------------------------ header card */}
-      <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.025] to-transparent p-5 backdrop-blur-xl md:p-6">
+      <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.025] to-transparent backdrop-blur-xl">
+        {/* the owner-made banner sits under everything else */}
+        <ProfileBannerLayer banner={profile.profileBanner} />
         <div className="pointer-events-none absolute -right-20 -top-24 size-72 rounded-full bg-neon/[0.09] blur-[80px]" />
-        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          {/* identity */}
-          <div className="flex min-w-0 items-center gap-4">
-            <div className="relative shrink-0">
-              <span className="grid size-16 place-items-center rounded-2xl bg-gradient-to-br from-violet to-[#3f2299] font-display text-2xl font-black shadow-[0_16px_40px_-18px_rgba(139,92,246,0.9)]">
-                {profile.nickname.slice(0, 1).toUpperCase()}
-              </span>
-              {profile.tier === "Premium" && (
-                <span className="absolute -bottom-1 -right-1 grid size-6 place-items-center rounded-full border-2 border-ink bg-neon">
-                  <StarIcon className="size-3.5 text-black" />
-                </span>
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl font-extrabold tracking-tight md:text-2xl">@{profile.nickname}</h1>
-                <ProfileMarks marks={profile.marks} />
-                <span className="rounded-full border border-neon/30 bg-neon/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-neon">
-                  {profile.tier}
-                </span>
-                {profile.badge && (
-                  <span className="rounded-full border border-legendary/30 bg-legendary/10 px-2 py-0.5 text-[10px] font-bold text-legendary">
-                    {profile.badge}
+        <div className="relative p-5 md:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            {/* identity */}
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="relative shrink-0">
+                <Avatar
+                  src={profile.avatarUrl}
+                  nickname={profile.nickname}
+                  size={64}
+                  rounded="rounded-2xl"
+                  className="shadow-[0_16px_40px_-18px_rgba(139,92,246,0.9)]"
+                />
+                {profile.tier === "Premium" && (
+                  <span className="absolute -bottom-1 -right-1 grid size-6 place-items-center rounded-full border-2 border-ink bg-neon">
+                    <StarIcon className="size-3.5 text-black" />
                   </span>
                 )}
               </div>
-              {/* collectible badges sit on their own row so the title stays clean */}
-              {profile.badges.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  {profile.badges.map((b) => {
-                    const badge = BADGE_BY_ID[b];
-                    if (!badge) return null;
-                    return (
-                      <span
-                        key={b}
-                        className="rounded-full border px-2 py-0.5 text-[9.5px] font-bold"
-                        style={{ color: badge.color, borderColor: `${badge.color}55`, background: `${badge.color}18` }}
-                      >
-                        {badge.label}
-                      </span>
-                    );
-                  })}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl font-extrabold tracking-tight md:text-2xl">
+                    @<GradientNick nickname={profile.nickname} gradient={profile.nameGradient} />
+                  </h1>
+                  <ProfileMarks marks={profile.marks} />
+                  <span className="rounded-full border border-neon/30 bg-neon/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-neon">
+                    {profile.tier}
+                  </span>
+                  {profile.badge && <GlowBadge badgeId={profile.badge} glow={profile.badgeGlow} />}
                 </div>
-              )}
-              <p className="mt-1.5 text-[12px] text-white/35">
-                С нами с {new Date(joinedAt).toLocaleDateString("ru-RU")} ·{" "}
-                {profile.anonymousNumber ? (
-                  <span className="tabular-nums text-white/55">{profile.phoneNumber ?? "+888"}</span>
-                ) : (
-                  "обычный номер"
+                {/* collectible badges sit on their own row so the title stays clean */}
+                {profile.badges.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {profile.badges.map((b) => (
+                      <GlowBadge key={b} badgeId={b} glow={profile.badgeGlow} />
+                    ))}
+                  </div>
                 )}
-                {profile.collectibleUsername && (
-                  <span className="text-violet"> · второй ник @{profile.collectibleUsername}</span>
+                <p className="mt-1.5 text-[12px] text-white/35">
+                  С нами с {new Date(joinedAt).toLocaleDateString("ru-RU")} ·{" "}
+                  {profile.anonymousNumber ? (
+                    <span className="tabular-nums text-white/55">{profile.phoneNumber ?? "+888"}</span>
+                  ) : (
+                    "обычный номер"
+                  )}
+                  {profile.collectibleUsername && (
+                    <span className="text-violet"> · второй ник @{profile.collectibleUsername}</span>
+                  )}
+                </p>
+                {profile.bio && (
+                  <p className="mt-1 max-w-md text-[12px] leading-relaxed text-white/50">{profile.bio}</p>
                 )}
-              </p>
+              </div>
+            </div>
+
+            {/* balances */}
+            <div className="flex flex-wrap items-stretch gap-2.5 lg:shrink-0">
+              <HeaderStat
+                label="Баланс"
+                accent="text-white"
+                icon={<StarIcon className="size-3 text-neon" />}
+                value={stars.toLocaleString("ru-RU")}
+              />
+              <HeaderStat label="Инвентарь" accent="text-violet" value={`${inventoryValue.toLocaleString("ru-RU")}★`} />
             </div>
           </div>
 
-          {/* balances */}
-          <div className="flex flex-wrap items-stretch gap-2.5 lg:shrink-0">
-            <HeaderStat
-              label="Баланс"
-              accent="text-white"
-              icon={<StarIcon className="size-3 text-neon" />}
-              value={stars.toLocaleString("ru-RU")}
-            />
-            <HeaderStat label="Инвентарь" accent="text-violet" value={`${inventoryValue.toLocaleString("ru-RU")}★`} />
-          </div>
+          {myPinned.length > 0 && (
+            <div className="mt-4 max-w-sm">
+              <PinnedStrip giftIds={myPinned.map((g) => g.id)} />
+            </div>
+          )}
         </div>
       </section>
 
