@@ -32,6 +32,7 @@ trailer/frames-update/
 trailer/preview/
 trailer/*.mp4
 trailer/out/
+trailer/banners.html
 
 # Editor directories and files
 .vscode/*

@@ -1,10 +1,16 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
-import { BADGE_BY_ID, DISCLAIMER, RARITY_META, type BadgeId } from "../data/gifts";
+import { DISCLAIMER, RARITY_META } from "../data/gifts";
 import { useGame } from "../store/useGame";
 import { useGiftIndex } from "../lib/useCatalog";
 import { GiftArt } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
+import {
+  GradientNick,
+  GlowBadge,
+  ProfileBannerLayer,
+  PinnedStrip,
+} from "../components/profile/Cosmetics";
 import {
   fetchPlayerInventory,
   fetchTop,
@@ -82,6 +88,16 @@ function ProfileModal({ player, onClose }: { player: PlayerRow; onClose: () => v
     return [...map.values()].sort((a, b) => b.newest - a.newest);
   }, [items]);
 
+  // pinned gifts travel in the same jsonb row; they get their own strip above
+  const pinnedIds = useMemo(() => {
+    if (!items || !show) return [];
+    return items
+      .filter((i) => i.pinned && GIFT_BY_ID[i.giftId])
+      .sort((a, b) => (b.acquiredAt ?? 0) - (a.acquiredAt ?? 0))
+      .slice(0, 3)
+      .map((i) => i.giftId);
+  }, [items, show, GIFT_BY_ID]);
+
   const visible = useMemo(
     () => grouped.filter((g) => GIFT_BY_ID[g.giftId]),
     [grouped, GIFT_BY_ID],
@@ -104,12 +120,19 @@ function ProfileModal({ player, onClose }: { player: PlayerRow; onClose: () => v
         className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0f0f13]"
       >
         <div className="relative overflow-hidden border-b border-white/8 bg-gradient-to-br from-white/[0.07] to-transparent p-5">
+          <ProfileBannerLayer banner={player.profile_banner} />
           <div className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full bg-violet/20 blur-[70px]" />
           <div className="relative flex items-center gap-4">
             <PlayerAvatar p={player} size={64} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                <h3 className="truncate text-lg font-extrabold tracking-tight">@{player.nickname}</h3>
+                <h3 className="truncate text-lg font-extrabold tracking-tight">
+                  <GradientNick
+                    nickname={player.nickname}
+                    gradient={player.name_gradient}
+                    withAt
+                  />
+                </h3>
                 <PlayerMarks p={player} />
               </div>
               <p className="mt-0.5 text-[11.5px] text-white/35">
@@ -136,20 +159,16 @@ function ProfileModal({ player, onClose }: { player: PlayerRow; onClose: () => v
             <div className="mb-4">
               <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">бейджи</p>
               <div className="flex flex-wrap gap-1.5">
-                {player.badges.map((b) => {
-                  const badge = BADGE_BY_ID[b as BadgeId];
-                  if (!badge) return null;
-                  return (
-                    <span
-                      key={b}
-                      className="rounded-full border px-2 py-0.5 text-[9.5px] font-bold"
-                      style={{ color: badge.color, borderColor: `${badge.color}55`, background: `${badge.color}18` }}
-                    >
-                      {badge.label}
-                    </span>
-                  );
-                })}
+                {player.badges.map((b) => (
+                  <GlowBadge key={b} badgeId={b} glow={player.badge_glow} />
+                ))}
               </div>
+            </div>
+          )}
+
+          {pinnedIds.length > 0 && (
+            <div className="mb-4 rounded-2xl border border-neon/15 bg-neon/[0.03] p-3">
+              <PinnedStrip giftIds={pinnedIds} />
             </div>
           )}
 
@@ -317,7 +336,9 @@ export default function Leaders() {
                 className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-2.5 py-2 text-left transition-colors hover:border-white/8 hover:bg-white/[0.04]"
               >
                 <PlayerAvatar p={p} size={36} />
-                <span className="min-w-0 flex-1 truncate text-[13px] font-bold">@{p.nickname}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] font-bold">
+                  <GradientNick nickname={p.nickname} gradient={p.name_gradient} withAt />
+                </span>
                 <span className="text-[11px] font-bold tabular-nums text-white/35">{p.inventory_value.toLocaleString("ru-RU")}★</span>
               </button>
             ))}
@@ -347,7 +368,9 @@ export default function Leaders() {
               <PlayerAvatar p={p} size={38} />
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-1.5">
-                  <span className="truncate text-[13.5px] font-extrabold tracking-tight">@{p.nickname}</span>
+                  <span className="truncate text-[13.5px] font-extrabold tracking-tight">
+                    <GradientNick nickname={p.nickname} gradient={p.name_gradient} withAt />
+                  </span>
                   <PlayerMarks p={p} size={13} />
                   {isMe && (
                     <span className="rounded-md border border-neon/30 bg-neon/10 px-1.5 py-0.5 text-[9px] font-bold text-neon">вы</span>

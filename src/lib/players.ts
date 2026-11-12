@@ -22,6 +22,10 @@ export type PlayerRow = {
   bio?: string | null;
   accent?: string | null;
   gradient?: string | null;
+  /** preset id, see src/data/cosmetics.ts */
+  name_gradient?: string | null;
+  badge_glow?: string | null;
+  profile_banner?: string | null;
   /** privacy switch: whether other players may browse this inventory */
   show_inventory?: boolean | null;
 };
@@ -107,6 +111,8 @@ export type RemoteInventoryItem = {
   giftId: string;
   acquiredAt?: number;
   source?: string;
+  /** pinned to the top of the owner's collection and shown on their card */
+  pinned?: boolean;
 };
 
 /**
@@ -384,6 +390,9 @@ export type CloudSave = {
   bio: string | null;
   accent: string | null;
   gradient: string | null;
+  name_gradient: string | null;
+  badge_glow: string | null;
+  profile_banner: string | null;
   owner_synced_at: string | null;
 };
 
@@ -486,6 +495,34 @@ export async function ownerSetProfile(
     p_gradient: patch.gradient ?? null,
     p_phone: patch.phone ?? null,
     p_alt_names: patch.altNames ?? null,
+  });
+  return error ? { error: error.message } : {};
+}
+
+/**
+ * Owner edit of the three decorative slots on a player card.
+ *
+ * Each slot has its own `set…` flag, so saving "gradient only" leaves the
+ * banner and the glow alone. The DB function is `owner_set_cosmetics` from
+ * `supabase/profile-cosmetics.sql`.
+ */
+export async function ownerSetCosmetics(
+  targetId: string,
+  patch: {
+    nameGradient?: string | null;
+    badgeGlow?: string | null;
+    profileBanner?: string | null;
+  },
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_set_cosmetics", {
+    target_id: targetId,
+    p_name_gradient: patch.nameGradient ?? null,
+    p_set_name_gradient: patch.nameGradient !== undefined,
+    p_badge_glow: patch.badgeGlow ?? null,
+    p_set_badge_glow: patch.badgeGlow !== undefined,
+    p_profile_banner: patch.profileBanner ?? null,
+    p_set_profile_banner: patch.profileBanner !== undefined,
   });
   return error ? { error: error.message } : {};
 }

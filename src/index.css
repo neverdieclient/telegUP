@@ -84,16 +84,44 @@
   100% { transform: rotate(360deg); }
 }
 
+/* --- profile cosmetics -------------------------------------------------- */
+
+/* nickname gradient: the background is 200% wide and slides, so animated
+   presets shimmer without touching the text colour itself */
+@keyframes nameGradientSlide {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+@keyframes badgeGlowPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--glow, transparent); opacity: 0.92; }
+  50% { box-shadow: 0 0 14px 3px var(--glow, transparent); opacity: 1; }
+}
+
+@keyframes badgeGlowHue {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+@keyframes bannerDrift {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 60px 0, 0 60px; }
+}
+
 /* Respect the in-app "Анимации" switch and the OS preference. */
 .reduce-motion [data-gift-motion],
-.reduce-motion [data-gift-motion] * {
+.reduce-motion [data-gift-motion] *,
+.reduce-motion [data-cosmetic-motion],
+.reduce-motion [data-cosmetic-motion] * {
   animation: none !important;
   transition: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-gift-motion],
-  [data-gift-motion] * {
+  [data-gift-motion] *,
+  [data-cosmetic-motion],
+  [data-cosmetic-motion] * {
     animation: none !important;
   }
 }

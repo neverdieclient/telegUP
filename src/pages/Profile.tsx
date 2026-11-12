@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useGame } from "../store/useGame";
-import { RARITY_META, DISCLAIMER, BADGE_BY_ID } from "../data/gifts";
+import { RARITY_META, DISCLAIMER } from "../data/gifts";
 import { useGiftIndex } from "../lib/useCatalog";
 import { CheckMark } from "../components/ui/CheckMark";
 import { StarIcon, GiftArt } from "../components/gifts/GiftArt";
@@ -8,6 +8,13 @@ import { useAuth, signOut, fetchPlayer, setInventoryVisibility } from "../lib/pl
 import { onlineEnabled } from "../lib/supabase";
 import { Row, Toggle, MARKS } from "./profile/rows";
 import { THEMES } from "../lib/theme";
+import {
+  GradientNick,
+  GlowBadge,
+  ProfileBannerLayer,
+  PinnedStrip,
+  useMyPinnedGifts,
+} from "../components/profile/Cosmetics";
 
 const RARITY_ROWS = ["mythic", "legendary", "epic", "rare", "common"] as const;
 
@@ -32,6 +39,7 @@ export default function ProfilePage() {
 
   const [draft, setDraft] = useState(profile.nickname);
   const [editing, setEditing] = useState(false);
+  const myPinned = useMyPinnedGifts();
 
   const value = useMemo(
     () => inventory.reduce((a, i) => a + (GIFT_BY_ID[i.giftId]?.stars ?? 0), 0),
@@ -110,6 +118,7 @@ export default function ProfilePage() {
               "linear-gradient(150deg, rgba(163,255,18,0.10), rgba(139,92,246,0.10) 45%, rgba(10,10,10,0) 75%)",
           }}
         />
+        <ProfileBannerLayer banner={profile.profileBanner} />
         <div className="pointer-events-none absolute inset-0 grid-bg opacity-40" />
         <div className="pointer-events-none absolute -right-24 -top-28 size-80 rounded-full bg-violet/20 blur-[90px]" />
         <div className="pointer-events-none absolute -left-16 bottom-[-40%] size-64 rounded-full bg-neon/15 blur-[90px]" />
@@ -146,7 +155,7 @@ export default function ProfilePage() {
                 ) : (
                   <>
                     <h2 className="truncate font-display text-[26px] font-black leading-none tracking-tight">
-                      {profile.nickname}
+                      <GradientNick nickname={profile.nickname} gradient={profile.nameGradient} />
                     </h2>
                     <span className="inline-flex items-center gap-1">
                       {activeMarks.map((m) => (
@@ -198,19 +207,15 @@ export default function ProfilePage() {
 
               {profile.badges.length > 0 && (
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {profile.badges.map((b) => {
-                    const badge = BADGE_BY_ID[b];
-                    if (!badge) return null;
-                    return (
-                      <span
-                        key={b}
-                        className="rounded-full border px-2 py-0.5 text-[9.5px] font-bold"
-                        style={{ color: badge.color, borderColor: `${badge.color}55`, background: `${badge.color}18` }}
-                      >
-                        {badge.label}
-                      </span>
-                    );
-                  })}
+                  {profile.badges.map((b) => (
+                    <GlowBadge key={b} badgeId={b} glow={profile.badgeGlow} />
+                  ))}
+                </div>
+              )}
+
+              {myPinned.length > 0 && (
+                <div className="mt-3 max-w-xs">
+                  <PinnedStrip giftIds={myPinned.map((g) => g.id)} />
                 </div>
               )}
             </div>

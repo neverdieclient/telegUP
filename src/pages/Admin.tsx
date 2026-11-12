@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useGame, formatPhoneNumber, PHONE_FORMATS } from "../store/useGame";
-import { BADGES, BADGE_BY_ID, DISCLAIMER, GIFT_BY_ID, RARITY_META, type BadgeId } from "../data/gifts";
+import { BADGES, DISCLAIMER, RARITY_META } from "../data/gifts";
 import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
 import { CustomGiftEditor } from "./admin/CustomGiftEditor";
 import { BoostPanel } from "./admin/BoostPanel";
@@ -26,6 +26,7 @@ import {
   grantMark,
   ownerBan,
   ownerDeliverGift,
+  ownerSetCosmetics,
   ownerSetProfile,
   ownerUnban,
   searchPlayers,
@@ -36,6 +37,7 @@ import {
   type PlayerRow,
 } from "../lib/players";
 import { getLocalSession, localSignIn, isOwnerEmail, verifyOwner } from "../lib/localAuth";
+import { CosmeticsPicker, SLOT_TITLE, type CosmeticSlot } from "./admin/CosmeticsPicker";
 
 /**
  * The single account allowed into the panel.
@@ -50,6 +52,38 @@ const OWNER_EMAIL = "oleg123456789123456@gmail.com";
 const MARK_LIST: { id: CheckMarkKind; label: string }[] = [
   { id: "basic", label: "Проверенный" },
 ];
+
+/** Tabs keep the console to one screen — nothing is stacked six panels deep. */
+type AdminTab = "players" | "cosmetics" | "content" | "site";
+
+const ADMIN_TABS: { id: AdminTab; label: string; hint: string }[] = [
+  { id: "players", label: "Игроки", hint: "выдача, звёзды, знаки, бейджи" },
+  { id: "cosmetics", label: "Красоты", hint: "градиент, свечение, баннер" },
+  { id: "content", label: "Контент", hint: "подарки, аукцион, буст" },
+  { id: "site", label: "Сайт", hint: "входы, баны, обслуживание" },
+];
+
+function TabBar({ tab, onPick }: { tab: AdminTab; onPick: (t: AdminTab) => void }) {
+  return (
+    <div className="flex gap-1 overflow-x-auto rounded-2xl border border-white/8 bg-black/30 p-1">
+      {ADMIN_TABS.map((t) => {
+        const on = tab === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onPick(t.id)}
+            title={t.hint}
+            className={`shrink-0 rounded-xl px-3 py-1.5 text-[11.5px] font-bold transition-colors ${
+              on ? "bg-white/10 text-white" : "text-white/40 hover:text-white/75"
+            }`}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function Panel({
   title,
@@ -620,6 +654,7 @@ export default function Admin() {
   const toggleMark = useGame((s) => s.toggleMark);
   const addItem = useGame((s) => s.addItem);
   const toast = useGame((s) => s.toast);
+  const GIFT_BY_ID = useGiftIndex();
 
   const [amount, setAmount] = useState(100000);
   const [giftQuery, setGiftQuery] = useState("");
@@ -630,7 +665,6 @@ export default function Admin() {
   const [playerQuery, setPlayerQuery] = useState("");
   /** account currently being acted on (from the search list) */
   const [target, setTarget] = useState<PlayerRow | null>(null);
-  const [targetGiftQuery, setTargetGiftQuery] = useState("");
   const [lookNick, setLookNick] = useState("");
   const [lookBio, setLookBio] = useState("");
   const [lookAlt, setLookAlt] = useState("");
@@ -638,14 +672,31 @@ export default function Admin() {
   /** which "+888 X XXX" preset new numbers use */
   const [phoneFormat, setPhoneFormat] = useState("x-xxx");
   const [busy, setBusy] = useState<string | null>(null);
+  const [tab, setTab] = useState<AdminTab>("players");
+  const [lookGradient, setLookGradient] = useState<string | null>(null);
+  const [lookGlow, setLookGlow] = useState<string | null>(null);
+  const [lookBanner, setLookBanner] = useState<string | null>(null);
+  const setCosmetics = useGame((s) => s.setCosmetics);
 
   // keep the cosmetics form in step with the selected account
   useEffect(() => {
-    if (!target) return;
-    setLookNick(target.nickname ?? "");
-    setLookBio(target.bio ?? "");
-    setLookAlt((target.alt_names ?? []).join(", "));
-    setLookPhone(target.phone_number ?? "");
+    if (target) {
+      setLookNick(target.nickname ?? "");
+      setLookBio(target.bio ?? "");
+      setLookAlt((target.alt_names ?? []).join(", "));
+      setLookPhone(target.phone_number ?? "");
+      setLookGradient(target.name_gradient ?? null);
+      setLookGlow(target.badge_glow ?? null);
+      setLookBanner(target.profile_banner ?? null);
+      return;
+    }
+    setLookNick(profile.nickname);
+    setLookBio(profile.bio ?? "");
+    setLookAlt(profile.altNames.join(", "));
+    setLookPhone(profile.phoneNumber ?? "");
+    setLookGradient(profile.nameGradient);
+    setLookGlow(profile.badgeGlow);
+    setLookBanner(profile.profileBanner);
   }, [target?.id]);
 
   useEffect(() => {
@@ -677,12 +728,6 @@ export default function Admin() {
           g.variant.toLowerCase().includes(giftQuery.trim().toLowerCase()),
       ).slice(0, 24)
     : [];
-
-  const targetGifts = useMemo(() => {
-    const q = targetGiftQuery.trim().toLowerCase();
-    if (!q) return [];
-    return GIFTS.filter((g) => g.name.toLowerCase().includes(q) || g.variant.toLowerCase().includes(q)).slice(0, 24);
-  }, [targetGiftQuery]);
 
   /* ------------------------------------------------ remote actions */
   /** Runs an online call with a spinner + one toast at the end. */
@@ -717,7 +762,6 @@ export default function Admin() {
       );
       return res;
     });
-    setTargetGiftQuery("");
     void refreshTarget(target.id);
   };
 
@@ -797,6 +841,37 @@ export default function Admin() {
     void refreshTarget(target.id);
   };
 
+  /**
+   * Apply one of the three decorative slots. On the owner's own row it also
+   * updates the live store so the change is visible without a reload; on
+   * another player it only writes the DB (they pick it up on the next poll).
+   */
+  const applyCosmetic = async (slot: CosmeticSlot, id: string | null) => {
+    if (slot === "name") setLookGradient(id);
+    if (slot === "badge") setLookGlow(id);
+    if (slot === "banner") setLookBanner(id);
+
+    const patch =
+      slot === "name"
+        ? { nameGradient: id }
+        : slot === "badge"
+          ? { badgeGlow: id }
+          : { profileBanner: id };
+
+    if (isSelf) setCosmetics(patch);
+
+    if (!onlineEnabled || !targetId) {
+      toast({ kind: "success", title: `${SLOT_TITLE[slot]} · себе` });
+      return;
+    }
+
+    const who = isSelf ? "себе" : `@${target!.nickname}`;
+    await run(`look:${slot}`, `${SLOT_TITLE[slot]} · ${who}`, () =>
+      ownerSetCosmetics(targetId, patch),
+    );
+    if (!isSelf) void refreshTarget(targetId);
+  };
+
   /** Local "give to myself" — the gift lands in this browser's inventory. */
   const giveSelfGift = (giftId: string) => {
     const gift = GIFT_BY_ID[giftId];
@@ -828,9 +903,6 @@ export default function Admin() {
             <CheckMark kind="owner" size={13} /> Owner
           </p>
           <h1 className="mt-1 font-display text-3xl font-black tracking-tight">Админ-панель</h1>
-          <p className="mt-1 text-[12.5px] text-white/35">
-            выдача подарков и знаков игрокам
-          </p>
         </div>
         <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
           <StarIcon className="size-4 text-neon" />
@@ -839,91 +911,81 @@ export default function Admin() {
         </div>
       </header>
 
-      <div className="grid gap-3.5 lg:grid-cols-2">
-        {/* ---------------- bans + login journal ---------------- */}
-        <BanPanel />
+      <TabBar tab={tab} onPick={setTab} />
 
-        {/* ---------------- account picker ---------------- */}
-        <Panel
-          title="Выбрать аккаунт"
-          desc="Найди игрока и выдай ему подарок, звёзды, бейдж или знак."
-          badge="accounts"
-        >
-          <div className="flex gap-2">
-            <input
-              value={playerQuery}
-              onChange={(e) => setPlayerQuery(e.target.value)}
-              placeholder={onlineEnabled ? "Ник или юзернейм (мин. 2 символа)" : "Только офлайн — своего профиля"}
-              disabled={!onlineEnabled}
-              className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40 disabled:opacity-40"
-            />
-            {target && (
-              <Button size="sm" variant="ghost" onClick={() => setTarget(null)}>
-                Сброс
-              </Button>
+      {/* ---------------- who the actions apply to ---------------- */}
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">аккаунт</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-[12.5px] font-extrabold">
+            @{target ? target.nickname : profile.nickname}
+          </span>
+          {selfTier === "Premium" && <CheckMark kind="premium" size={13} />}
+        </span>
+        <span className="rounded-md border border-neon/25 bg-neon/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-neon">
+          {target ? "выбран" : "я"}
+        </span>
+        {target && (
+          <button
+            onClick={() => setTarget(null)}
+            className="ml-auto rounded-lg border border-white/10 px-2 py-0.5 text-[10px] font-bold text-white/45 hover:text-white"
+          >
+            действовать на себя
+          </button>
+        )}
+      </div>
+
+      {tab === "players" && (
+        <div className="grid gap-3.5 lg:grid-cols-2">
+          {/* ---------------- account picker ---------------- */}
+          <Panel
+            title="Выбрать аккаунт"
+            desc="Найди игрока и выдай ему подарок, звёзды, бейдж или знак."
+            badge="accounts"
+          >
+            <div className="flex gap-2">
+              <input
+                value={playerQuery}
+                onChange={(e) => setPlayerQuery(e.target.value)}
+                placeholder={onlineEnabled ? "Ник или юзернейм (мин. 2 символа)" : "Только офлайн — своего профиля"}
+                disabled={!onlineEnabled}
+                className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40 disabled:opacity-40"
+              />
+            </div>
+
+            {!onlineEnabled && (
+              <p className="mt-2 rounded-xl border border-white/8 bg-black/30 px-3 py-2 text-[11px] text-white/30">
+                Онлайн-база не подключена — действия применяются к твоему локальному профилю.
+              </p>
             )}
-          </div>
 
-          {!onlineEnabled && (
-            <p className="mt-2 rounded-xl border border-white/8 bg-black/30 px-3 py-2 text-[11px] text-white/30">
-              Онлайн-база не подключена — действия применяются к твоему локальному профилю.
-            </p>
-          )}
-
-          {!target && (
-            <div className="mt-2 max-h-52 space-y-1 overflow-y-auto">
-              {players.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setTarget(p)}
-                  className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/8 bg-black/25 px-2.5 py-2 text-left hover:border-neon/30 hover:bg-white/[0.04]"
-                >
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-[12px] font-bold">@{p.nickname}</span>
-                    {p.tier === "Premium" && <CheckMark kind="premium" size={12} />}
-                  </span>
-                  <span className="shrink-0 text-[10px] tabular-nums text-white/30">
-                    {p.stars.toLocaleString("ru-RU")}★ · {p.items} шт
-                  </span>
-                </button>
-              ))}
-              {onlineEnabled && playerQuery.trim().length >= 2 && players.length === 0 && (
-                <p className="py-3 text-center text-[11px] text-white/25">Никого не нашли</p>
-              )}
-              {onlineEnabled && playerQuery.trim().length < 2 && (
-                <p className="py-3 text-center text-[11px] text-white/25">
-                  Введи ник — или выбери «себя» ниже
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* ---- selected account ---- */}
-          <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 p-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="flex items-center gap-1.5 text-[12.5px] font-extrabold">
-                  <span className="truncate">@{target ? target.nickname : profile.nickname}</span>
-                  {selfTier === "Premium" && <CheckMark kind="premium" size={13} />}
-                </p>
-                <p className="mt-0.5 text-[10.5px] text-white/30">
-                  {target ? (
-                    <>
-                      {target.stars.toLocaleString("ru-RU")}★ · {target.items} предметов · {target.inventory_value.toLocaleString("ru-RU")}★ коллекция
-                    </>
-                  ) : (
-                    <>{stars.toLocaleString("ru-RU")}★ · {inventory.length} предметов · мой профиль</>
-                  )}
-                </p>
-                <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-white/25">
-                  {selfTier === "Premium" ? "Premium" : "Free"}
-                  {selfBadges.length > 0 && ` · ${selfBadges.map((b) => BADGE_BY_ID[b as BadgeId]?.label ?? b).join(", ")}`}
-                </p>
+            {!target && (
+              <div className="mt-2 max-h-52 space-y-1 overflow-y-auto">
+                {players.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setTarget(p)}
+                    className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/8 bg-black/25 px-2.5 py-2 text-left hover:border-neon/30 hover:bg-white/[0.04]"
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-[12px] font-bold">@{p.nickname}</span>
+                      {p.tier === "Premium" && <CheckMark kind="premium" size={12} />}
+                    </span>
+                    <span className="shrink-0 text-[10px] tabular-nums text-white/30">
+                      {p.stars.toLocaleString("ru-RU")}★ · {p.items} шт
+                    </span>
+                  </button>
+                ))}
+                {onlineEnabled && playerQuery.trim().length >= 2 && players.length === 0 && (
+                  <p className="py-3 text-center text-[11px] text-white/25">Никого не нашли</p>
+                )}
+                {onlineEnabled && playerQuery.trim().length < 2 && (
+                  <p className="py-3 text-center text-[11px] text-white/25">
+                    Введи ник — или действуй на себя
+                  </p>
+                )}
               </div>
-              <span className="shrink-0 rounded-md border border-neon/25 bg-neon/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-neon">
-                {target ? "выбран" : "я"}
-              </span>
-            </div>
+            )}
 
             {/* stars */}
             <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">звёзды</p>
@@ -988,7 +1050,7 @@ export default function Admin() {
                 ? admin.upgradeLuck > 100
                   ? `Сейчас активен бонус ×${admin.upgradeLuck / 100} — действует на тебя`
                   : "Сейчас действует обычный шанс"
-                : `Выдача применится к @${target?.nickname ?? "—"} (нужно выбрать игрока выше)`}
+                : `Применится к @${target?.nickname ?? "—"}`}
             </p>
 
             {/* verification marks */}
@@ -1081,312 +1143,323 @@ export default function Admin() {
                 );
               })}
             </div>
+          </Panel>
 
-            {/* cosmetics of the selected account */}
-            {target && (
-              <>
-                <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
-                  красоты → @{target.nickname}
-                </p>
-                <div className="space-y-1.5">
-                  <input
-                    value={lookNick}
-                    onChange={(e) => setLookNick(e.target.value)}
-                    placeholder="Ник"
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
-                  />
-                  <input
-                    value={lookBio}
-                    onChange={(e) => setLookBio(e.target.value)}
-                    placeholder="Статус / био"
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
-                  />
-                  <input
-                    value={lookAlt}
-                    onChange={(e) => setLookAlt(e.target.value)}
-                    placeholder="Доп. имена: @name1, @name2"
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
-                  />
-
-                  {/* +888 number issuing */}
-                  <div className="rounded-xl border border-white/10 bg-black/30 p-2.5">
-                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
-                      +888 номер
-                    </p>
-                    <div className="mb-2 flex flex-wrap gap-1">
-                      {PHONE_FORMATS.map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => setPhoneFormat(f.id)}
-                          className={`rounded-lg border px-2 py-1 text-[10.5px] font-bold transition ${
-                            phoneFormat === f.id
-                              ? "border-neon/40 bg-neon/15 text-neon"
-                              : "border-white/10 bg-white/[0.03] text-white/45 hover:text-white/80"
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex gap-1.5">
-                      <input
-                        value={lookPhone}
-                        onChange={(e) => setLookPhone(e.target.value)}
-                        placeholder={PHONE_FORMATS.find((f) => f.id === phoneFormat)?.label ?? "+888 X XXX"}
-                        className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] tabular-nums text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setLookPhone(formatPhoneNumber("", phoneFormat))}
-                        className="shrink-0 rounded-xl border border-violet/30 bg-violet/15 px-3 py-2 text-[11px] font-bold text-violet hover:bg-violet/25"
-                      >
-                        Рандом
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLookPhone("")}
-                        className="shrink-0 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-bold text-white/45 hover:text-white/80"
-                      >
-                        Сброс
-                      </button>
-                    </div>
-                    <p className="mt-1.5 text-[10px] text-white/25">
-                      Своё значение подставляется в выбранный формат: «8888 8» → +888 8 888.
-                    </p>
-                  </div>
-
-                  <button
-                    disabled={busy === "look:save"}
-                    onClick={() =>
-                      saveTargetCosmetics("Красоты", {
-                        nickname: lookNick.trim() || null,
-                        bio: lookBio.trim() || null,
-                        altNames: lookAlt
-                          .split(",")
-                          .map((s) => s.replace(/^@/, "").trim())
-                          .filter(Boolean),
-                        phone: lookPhone.trim() ? formatPhoneNumber(lookPhone, phoneFormat) : null,
-                      })
-                    }
-                    className="w-full rounded-xl bg-white/10 py-2 text-[11.5px] font-bold text-white/80 hover:bg-white/15 disabled:opacity-40"
-                  >
-                    {busy === "look:save" ? "Сохраняю…" : "Сохранить профиль игрока"}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* what the selected account actually holds */}
-            {target && (
-              <div className="mt-3">
-                <PlayerInventory playerId={target.id} nickname={target.nickname} />
-              </div>
-            )}
-
-            {/* gift to the selected account */}
-            <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
-              подарок {target ? `→ @${target.nickname}` : "→ себе"}
-            </p>
-            {!target && (
-              <p className="mb-1.5 text-[10.5px] leading-relaxed text-white/25">
-                Выбери аккаунт выше, чтобы отправить подарок игроку. Без выбора подарок падает в твой инвентарь.
-              </p>
-            )}
+          {/* ---------------- gifts ---------------- */}
+          <Panel
+            title={target ? `Подарок → @${target.nickname}` : "Выдать подарки"}
+            desc="Поиск по всей базе реальных подарков Telegram."
+            badge="gifts"
+          >
             <input
-              value={targetGiftQuery}
-              onChange={(e) => setTargetGiftQuery(e.target.value)}
-              placeholder="Plush Pepe, Durov, Heart…"
+              value={giftQuery}
+              onChange={(e) => setGiftQuery(e.target.value)}
+              placeholder="Plush Pepe, Durov…"
               className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
             />
-            <div className="mt-2 grid max-h-44 grid-cols-3 gap-1.5 overflow-y-auto sm:grid-cols-4">
-              {targetGifts.map((g) => (
+            <div className="mt-2.5 grid max-h-64 grid-cols-3 gap-1.5 overflow-y-auto">
+              {found.map((g) => (
                 <button
                   key={g.id}
                   disabled={busy === `gift:${g.id}`}
                   onClick={() => (target ? giveGiftToTarget(g.id) : giveSelfGift(g.id))}
                   className={`flex flex-col items-center rounded-xl border p-1.5 disabled:opacity-40 ${RARITY_META[g.rarity].ring} hover:bg-white/5`}
                 >
-                  <GiftArt gift={g} size={30} rounded="rounded-md" />
+                  <GiftArt gift={g} size={34} rounded="rounded-md" />
                   <p className="mt-0.5 w-full truncate text-center text-[8.5px] font-bold text-white/60">
                     {g.variant === "Gift" ? g.name : g.variant}
                   </p>
                 </button>
               ))}
-              {!targetGifts.length && (
-                <p className="col-span-3 py-4 text-center text-[11px] text-white/25 sm:col-span-4">
-                  Введи название подарка
+              {!found.length && (
+                <p className="col-span-3 py-6 text-center text-[11px] text-white/25">
+                  Введите название, чтобы найти подарок
                 </p>
               )}
             </div>
-          </div>
-        </Panel>
 
-        {/* ---------------- top players ---------------- */}
-        <Panel
-          title="Топ игроков"
-          desc="Быстрый выбор из лидерборда — по ценности коллекции."
-          badge="top"
-        >
-          <TopPlayers onPick={(p) => setTarget(p)} />
-        </Panel>
-
-        {/* ---------------- gifts ---------------- */}
-        <Panel
-          title={target ? `Подарок → @${target.nickname}` : "Выдать подарки"}
-          desc="Поиск по всей базе реальных подарков Telegram."
-          badge="gifts"
-        >
-          <input
-            value={giftQuery}
-            onChange={(e) => setGiftQuery(e.target.value)}
-            placeholder="Plush Pepe, Durov…"
-            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
-          />
-          <div className="mt-2.5 grid max-h-52 grid-cols-3 gap-1.5 overflow-y-auto">
-            {found.map((g) => (
-              <button
-                key={g.id}
-                disabled={busy === `gift:${g.id}`}
-                onClick={() => (target ? giveGiftToTarget(g.id) : giveSelfGift(g.id))}
-                className={`flex flex-col items-center rounded-xl border p-1.5 disabled:opacity-40 ${RARITY_META[g.rarity].ring} hover:bg-white/5`}
-              >
-                <GiftArt gift={g} size={34} rounded="rounded-md" />
-                <p className="mt-0.5 w-full truncate text-center text-[8.5px] font-bold text-white/60">
-                  {g.variant === "Gift" ? g.name : g.variant}
-                </p>
-              </button>
-            ))}
-            {!found.length && (
-              <p className="col-span-3 py-6 text-center text-[11px] text-white/25">
-                Введите название, чтобы найти подарок
-              </p>
-            )}
-          </div>
-        </Panel>
-
-        {/* ---------------- custom gifts ---------------- */}
-        <Panel
-          title="Мои подарки и улучшения"
-          desc="Создавай свои подарки: «Всем» — обычный публичный, «Тест» — купить может только владелец."
-          badge="custom"
-        >
-          <CustomGiftEditor />
-        </Panel>
-
-        {/* ---------------- house auction ---------------- */}
-        <Panel
-          title="Аукцион"
-          desc="Выставь любой подарок по названию: старт, выкуп и сколько идёт. Можно запланировать — тогда лот виден всем с пометкой «скоро» и закрыт до выбранного времени."
-          badge="новое"
-        >
-          <AuctionAdmin />
-        </Panel>
-
-        {/* ---------------- star boost ---------------- */}
-        <Panel
-          title="Двойные звёзды"
-          desc="Включай и выключай бонус в любой момент: множитель на всё, что игроки зарабатывают."
-          badge="boost"
-        >
-          <BoostPanel />
-        </Panel>
-
-        {/* ---------------- maintenance (self only) ---------------- */}
-        <Panel
-          title="Обслуживание"
-          desc="Действия на твоём профиле. Выдача другим игрокам — в панели «Выбрать аккаунт»."
-          badge="self"
-        >
-          <div className="grid grid-cols-2 gap-2">
-            <Button size="sm" variant="violet" onClick={() => adminGrantPremium(profile.tier !== "Premium")}>
-              {profile.tier === "Premium" ? "Снять Premium" : "Выдать Premium"}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={adminGrantAllGifts}>
-              Выдать все подарки
-            </Button>
-            <Button size="sm" variant="ghost" onClick={adminClearInventory}>
-              Очистить инвентарь
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => adminGrantStars(-stars)}>
-              Обнулить баланс
-            </Button>
-          </div>
-          <Button full size="sm" variant="danger" className="mt-2" onClick={() => setConfirmReset(true)}>
-            Полный сброс аккаунта
-          </Button>
-        </Panel>
-
-        {/* ---------------- site mode ---------------- */}
-        <Panel
-          title="Сайт"
-          desc="Технические работы: кейсы, апгрейд, аукцион, маркет и мини-игры закрыты. Профиль, инвентарь, Telegram, настройки и чат остаются."
-          badge="site"
-        >
-          <button
-            onClick={() => setAdmin({ maintenance: !admin.maintenance })}
-            className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
-              admin.maintenance
-                ? "border-amber-400/40 bg-amber-400/10"
-                : "border-white/8 bg-black/30 hover:bg-white/[0.04]"
-            }`}
-          >
-            <span className="min-w-0">
-              <span className="block text-[12.5px] font-extrabold">
-                {admin.maintenance ? "Технические работы включены" : "Сайт работает"}
-              </span>
-              <span className="mt-0.5 block text-[10.5px] text-white/35">
-                {admin.maintenance
-                  ? "Игроки видят только разрешённые разделы"
-                  : "Нажми, чтобы временно закрыть игры"}
-              </span>
-            </span>
-            <span
-              className={`relative h-6 w-11 shrink-0 rounded-full transition ${
-                admin.maintenance ? "bg-amber-400" : "bg-white/12"
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${
-                  admin.maintenance ? "left-[22px]" : "left-0.5"
-                }`}
-              />
-            </span>
-          </button>
-        </Panel>
-
-        {/* ---------------- stats ---------------- */}
-        <Panel title="Статистика" desc="Счётчики текущего браузера." badge="stats">
-          <div className="grid grid-cols-2 gap-1.5">
-            {(
-              [
-                ["кейсов", stats.casesOpened],
-                ["апгрейд +", stats.upgradesWon],
-                ["апгрейд −", stats.upgradesLost],
-                ["маркет", stats.marketBuys],
-                ["продано", stats.giftsSold],
-                ["pvp +", stats.pvpWins],
-                ["pvp −", stats.pvpLosses],
-                ["crash", stats.crashWins],
-                ["mines", stats.minesWins],
-                ["dice", stats.diceWins],
-                ["wheel", stats.wheelWins],
-                ["tower", stats.towerWins],
-              ] as [string, number][]
-            ).map(([l, v]) => (
-              <div key={l} className="rounded-xl border border-white/7 bg-white/[0.02] px-2.5 py-1.5">
-                <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-white/25">{l}</p>
-                <p className="text-[12.5px] font-extrabold tabular-nums text-white/80">{v}</p>
+            {target && (
+              <div className="mt-3 border-t border-white/8 pt-3">
+                <PlayerInventory playerId={target.id} nickname={target.nickname} />
               </div>
-            ))}
+            )}
+
+            <div className="mt-3 border-t border-white/8 pt-3">
+              <TopPlayers onPick={(p) => setTarget(p)} />
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      {/* ---------------- cosmetics ---------------- */}
+      {tab === "cosmetics" && (
+        <div className="grid gap-3.5 lg:grid-cols-2">
+          <Panel
+            title={`Красоты → ${target ? `@${target.nickname}` : "себе"}`}
+            desc="Градиент ника, свечение бейджей и баннер карточки. Выбор применяется сразу и виден всем."
+            badge="look"
+          >
+            <div className="space-y-3">
+              {(
+                [
+                  ["name", lookGradient],
+                  ["badge", lookGlow],
+                  ["banner", lookBanner],
+                ] as [CosmeticSlot, string | null][]
+              ).map(([slot, value]) => (
+                <div key={slot}>
+                  <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+                    {SLOT_TITLE[slot]}
+                  </p>
+                  <CosmeticsPicker
+                    slot={slot}
+                    value={value}
+                    busy={!!busy}
+                    onPick={(id) => void applyCosmetic(slot, id)}
+                  />
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel
+            title="Профиль игрока"
+            desc={target ? `Ник, статус, доп. имена и +888 для @${target.nickname}.` : "Ник, статус, доп. имена и +888 на своей карточке."}
+            badge="profile"
+          >
+            <div className="space-y-1.5">
+              <input
+                value={lookNick}
+                onChange={(e) => setLookNick(e.target.value)}
+                placeholder="Ник"
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+              />
+              <input
+                value={lookBio}
+                onChange={(e) => setLookBio(e.target.value)}
+                placeholder="Статус / био"
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+              />
+              <input
+                value={lookAlt}
+                onChange={(e) => setLookAlt(e.target.value)}
+                placeholder="Доп. имена: @name1, @name2"
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+              />
+
+              {/* +888 number issuing */}
+              <div className="rounded-xl border border-white/10 bg-black/30 p-2.5">
+                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+                  +888 номер
+                </p>
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {PHONE_FORMATS.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setPhoneFormat(f.id)}
+                      className={`rounded-lg border px-2 py-1 text-[10.5px] font-bold transition ${
+                        phoneFormat === f.id
+                          ? "border-neon/40 bg-neon/15 text-neon"
+                          : "border-white/10 bg-white/[0.03] text-white/45 hover:text-white/80"
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    value={lookPhone}
+                    onChange={(e) => setLookPhone(e.target.value)}
+                    placeholder={PHONE_FORMATS.find((f) => f.id === phoneFormat)?.label ?? "+888 X XXX"}
+                    className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] tabular-nums text-white/85 outline-none placeholder:text-white/20 focus:border-neon/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setLookPhone(formatPhoneNumber("", phoneFormat))}
+                    className="shrink-0 rounded-xl border border-violet/30 bg-violet/15 px-3 py-2 text-[11px] font-bold text-violet hover:bg-violet/25"
+                  >
+                    Рандом
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLookPhone("")}
+                    className="shrink-0 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-bold text-white/45 hover:text-white/80"
+                  >
+                    Сброс
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[10px] text-white/25">
+                  Своё значение подставляется в выбранный формат: «8888 8» → +888 8 888.
+                </p>
+              </div>
+
+              <button
+                disabled={busy === "look:save"}
+                onClick={() => {
+                  if (target) {
+                    void saveTargetCosmetics("Профиль", {
+                      nickname: lookNick.trim() || null,
+                      bio: lookBio.trim() || null,
+                      altNames: lookAlt
+                        .split(",")
+                        .map((s) => s.replace(/^@/, "").trim())
+                        .filter(Boolean),
+                      phone: lookPhone.trim() ? formatPhoneNumber(lookPhone, phoneFormat) : null,
+                    });
+                    return;
+                  }
+                  toast({
+                    kind: "info",
+                    title: "Только для выбранного аккаунта",
+                    message: "Выбери игрока на вкладке «Игроки»",
+                  });
+                }}
+                className="w-full rounded-xl bg-white/10 py-2 text-[11.5px] font-bold text-white/80 hover:bg-white/15 disabled:opacity-40"
+              >
+                {busy === "look:save" ? "Сохраняю…" : "Сохранить профиль игрока"}
+              </button>
+              {!target && (
+                <p className="text-[10.5px] leading-relaxed text-white/25">
+                  Выбери аккаунт на вкладке «Игроки», чтобы менять чужой профиль. Красоты выше
+                  применяются к тебе.
+                </p>
+              )}
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      {/* ---------------- content ---------------- */}
+      {tab === "content" && (
+        <div className="grid gap-3.5 lg:grid-cols-2">
+          <Panel
+            title="Мои подарки и улучшения"
+            desc="Создавай свои подарки: «Всем» — обычный публичный, «Тест» — купить может только владелец."
+            badge="custom"
+          >
+            <CustomGiftEditor />
+          </Panel>
+
+          <Panel
+            title="Аукцион"
+            desc="Выставь любой подарок по названию: старт, выкуп и сколько идёт. Можно запланировать — тогда лот виден всем с пометкой «скоро» и закрыт до выбранного времени."
+            badge="новое"
+          >
+            <AuctionAdmin />
+          </Panel>
+
+          <Panel
+            title="Двойные звёзды"
+            desc="Включай и выключай бонус в любой момент: множитель на всё, что игроки зарабатывают."
+            badge="boost"
+          >
+            <BoostPanel />
+          </Panel>
+        </div>
+      )}
+
+      {/* ---------------- site ---------------- */}
+      {tab === "site" && (
+        <div className="grid gap-3.5 lg:grid-cols-2">
+          <BanPanel />
+
+          <div className="space-y-3.5">
+            <Panel
+              title="Сайт"
+              desc="Технические работы: кейсы, апгрейд, аукцион, маркет и мини-игры закрыты. Профиль, инвентарь, Telegram, настройки и чат остаются."
+              badge="site"
+            >
+              <button
+                onClick={() => setAdmin({ maintenance: !admin.maintenance })}
+                className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+                  admin.maintenance
+                    ? "border-amber-400/40 bg-amber-400/10"
+                    : "border-white/8 bg-black/30 hover:bg-white/[0.04]"
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className="block text-[12.5px] font-extrabold">
+                    {admin.maintenance ? "Технические работы включены" : "Сайт работает"}
+                  </span>
+                  <span className="mt-0.5 block text-[10.5px] text-white/35">
+                    {admin.maintenance
+                      ? "Игроки видят только разрешённые разделы"
+                      : "Нажми, чтобы временно закрыть игры"}
+                  </span>
+                </span>
+                <span
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                    admin.maintenance ? "bg-amber-400" : "bg-white/12"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${
+                      admin.maintenance ? "left-[22px]" : "left-0.5"
+                    }`}
+                  />
+                </span>
+              </button>
+            </Panel>
+
+            <Panel
+              title="Обслуживание"
+              desc="Действия на твоём профиле."
+              badge="self"
+            >
+              <div className="grid grid-cols-2 gap-2">
+                <Button size="sm" variant="violet" onClick={() => adminGrantPremium(profile.tier !== "Premium")}>
+                  {profile.tier === "Premium" ? "Снять Premium" : "Выдать Premium"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={adminGrantAllGifts}>
+                  Выдать все подарки
+                </Button>
+                <Button size="sm" variant="ghost" onClick={adminClearInventory}>
+                  Очистить инвентарь
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => adminGrantStars(-stars)}>
+                  Обнулить баланс
+                </Button>
+              </div>
+              <Button full size="sm" variant="danger" className="mt-2" onClick={() => setConfirmReset(true)}>
+                Полный сброс аккаунта
+              </Button>
+            </Panel>
+
+            <Panel title="Статистика" desc="Счётчики текущего браузера." badge="stats">
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    ["кейсов", stats.casesOpened],
+                    ["апгрейд +", stats.upgradesWon],
+                    ["апгрейд −", stats.upgradesLost],
+                    ["маркет", stats.marketBuys],
+                    ["продано", stats.giftsSold],
+                    ["pvp +", stats.pvpWins],
+                    ["pvp −", stats.pvpLosses],
+                    ["crash", stats.crashWins],
+                    ["mines", stats.minesWins],
+                    ["dice", stats.diceWins],
+                    ["wheel", stats.wheelWins],
+                    ["tower", stats.towerWins],
+                  ] as [string, number][]
+                ).map(([l, v]) => (
+                  <div key={l} className="rounded-xl border border-white/7 bg-white/[0.02] px-2.5 py-1.5">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-white/25">{l}</p>
+                    <p className="text-[12.5px] font-extrabold tabular-nums text-white/80">{v}</p>
+                  </div>
+                ))}
+              </div>
+              <Link to="/app" className="mt-3 block">
+                <Button full size="sm" variant="ghost">
+                  ← В приложение
+                </Button>
+              </Link>
+            </Panel>
           </div>
-          <Link to="/app" className="mt-3 block">
-            <Button full size="sm" variant="ghost">
-              ← В приложение
-            </Button>
-          </Link>
-        </Panel>
-      </div>
+        </div>
+      )}
 
       <p className="rounded-2xl border border-white/6 bg-white/[0.02] p-3.5 text-center text-[10.5px] leading-relaxed text-white/25">
         {DISCLAIMER}

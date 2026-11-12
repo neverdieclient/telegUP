@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { BADGE_BY_ID, RARITY_META, RARITY_ORDER, SHOP_USERNAMES, type Gift, type Rarity } from "../data/gifts";
 import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
 import { MAX_PINNED, useGame } from "../store/useGame";
+import { useGiftInbox } from "../lib/useGiftInbox";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
 import { UsernameLootbox } from "../components/gifts/UsernameLootbox";
 import { Button } from "../components/ui/Button";
@@ -47,6 +48,7 @@ export default function Inventory() {
   const sellItem = useGame((s) => s.sellItem);
   const sellAll = useGame((s) => s.sellAll);
   const togglePin = useGame((s) => s.togglePin);
+  const { flush: flushInventory } = useGiftInbox();
   const giftItem = useGame((s) => s.giftItem);
   const upgradeItemModel = useGame((s) => s.upgradeItemModel);
   const loseItemOnUpgrade = useGame((s) => s.loseItemOnUpgrade);
@@ -245,10 +247,14 @@ export default function Inventory() {
       return;
     }
     const nowPinned = togglePin(id);
+    // pinned is part of the inventory row that other players read, so it has to
+    // reach the cloud right away — otherwise the strip on the public card
+    // keeps showing the old set until something else triggers a push
+    if (nowPinned !== Boolean(item.pinned)) flushInventory();
     toast({
       kind: "success",
       title: nowPinned ? "Подарок закреплён" : "Подарок откреплён",
-      message: nowPinned ? "Закреплённые висят сверху" : undefined,
+      message: nowPinned ? "Закреплённые висят сверху и видны в профиле" : undefined,
     });
   };
 

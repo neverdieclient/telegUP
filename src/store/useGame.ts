@@ -109,6 +109,12 @@ export type Profile = {
   accent: string | null;
   /** gradient preset id for the avatar/header (see ACCENTS) */
   gradient: string | null;
+  /** nickname text gradient, see src/data/cosmetics.ts */
+  nameGradient: string | null;
+  /** badge pulse preset, see src/data/cosmetics.ts */
+  badgeGlow: string | null;
+  /** header banner preset, see src/data/cosmetics.ts */
+  profileBanner: string | null;
   /** short status line under the nickname */
   bio: string | null;
   purchasedUsernames: string[];
@@ -241,6 +247,12 @@ type State = {
   setAltNames: (names: string[]) => void;
   /** Avatar/header cosmetics. */
   setAccent: (accent: string | null, gradient: string | null) => void;
+  /** Nickname gradient / badge glow / profile banner. */
+  setCosmetics: (patch: {
+    nameGradient?: string | null;
+    badgeGlow?: string | null;
+    profileBanner?: string | null;
+  }) => void;
   setBio: (bio: string | null) => void;
   /** Privacy switch: «Показывать мои подарки другим». */
   setShowInventory: (show: boolean) => void;
@@ -271,6 +283,9 @@ type State = {
     bio: string | null;
     accent: string | null;
     gradient: string | null;
+    nameGradient?: string | null;
+    badgeGlow?: string | null;
+    profileBanner?: string | null;
     /** owner-granted upgrade luck (100 = honest). Optional so older callers keep working. */
     upgradeLuck?: number;
   }) => void;
@@ -306,6 +321,9 @@ type State = {
     bio: string | null;
     accent: string | null;
     gradient: string | null;
+    name_gradient?: string | null;
+    badge_glow?: string | null;
+    profile_banner?: string | null;
   }) => void;
   /** verification marks: basic / premium / owner / crown */
   toggleMark: (mark: string) => void;
@@ -376,6 +394,9 @@ export const initialState = {
     altNames: [] as string[],
     accent: null as string | null,
     gradient: null as string | null,
+    nameGradient: null as string | null,
+    badgeGlow: null as string | null,
+    profileBanner: null as string | null,
     bio: null as string | null,
     purchasedUsernames: [] as string[],
     collectibleUsername: null,
@@ -848,6 +869,16 @@ export const useGame = create<State>()(
       setAccent: (accent, gradient) =>
         set((s) => ({ profile: { ...s.profile, accent, gradient } })),
 
+      setCosmetics: (patch) =>
+        set((s) => ({
+          profile: {
+            ...s.profile,
+            ...(patch.nameGradient !== undefined ? { nameGradient: patch.nameGradient } : {}),
+            ...(patch.badgeGlow !== undefined ? { badgeGlow: patch.badgeGlow } : {}),
+            ...(patch.profileBanner !== undefined ? { profileBanner: patch.profileBanner } : {}),
+          },
+        })),
+
       setBio: (bio) => set((s) => ({ profile: { ...s.profile, bio: bio?.slice(0, 60) ?? null } })),
 
       setShowInventory: (show) =>
@@ -859,6 +890,9 @@ export const useGame = create<State>()(
             ...s.profile,
             accent: null,
             gradient: null,
+            nameGradient: null,
+            badgeGlow: null,
+            profileBanner: null,
             bio: null,
             altNames: [],
           },
@@ -931,6 +965,9 @@ export const useGame = create<State>()(
               bio: save.bio ?? s.profile.bio,
               accent: save.accent ?? s.profile.accent,
               gradient: save.gradient ?? s.profile.gradient,
+              nameGradient: save.name_gradient ?? s.profile.nameGradient,
+              badgeGlow: save.badge_glow ?? s.profile.badgeGlow,
+              profileBanner: save.profile_banner ?? s.profile.profileBanner,
             },
           };
         }),
@@ -957,7 +994,10 @@ export const useGame = create<State>()(
           const sameCosmetics =
             server.bio === s.profile.bio &&
             server.accent === s.profile.accent &&
-            server.gradient === s.profile.gradient;
+            server.gradient === s.profile.gradient &&
+            (server.nameGradient === undefined || server.nameGradient === s.profile.nameGradient) &&
+            (server.badgeGlow === undefined || server.badgeGlow === s.profile.badgeGlow) &&
+            (server.profileBanner === undefined || server.profileBanner === s.profile.profileBanner);
 
           // nothing changed: keep the same object so React does not re-render
           if (
@@ -994,6 +1034,9 @@ export const useGame = create<State>()(
               bio: server.bio,
               accent: server.accent,
               gradient: server.gradient,
+              nameGradient: server.nameGradient ?? s.profile.nameGradient,
+              badgeGlow: server.badgeGlow ?? s.profile.badgeGlow,
+              profileBanner: server.profileBanner ?? s.profile.profileBanner,
             },
             // luck is a pure owner grant: whatever the server says wins, and
             // a normal 100 is written too so a revoked boost actually drops.
@@ -1051,7 +1094,15 @@ export const useGame = create<State>()(
         set({
           ...initialState,
           joinedAt: Date.now(),
-          profile: { ...initialState.profile, phoneNumber: newPhone },
+          profile: {
+            ...initialState.profile,
+            phoneNumber: newPhone,
+            // the owner's decoration is a grant, not progress: a reset must not
+            // take away a gradient someone paid attention to set up
+            nameGradient: get().profile.nameGradient,
+            badgeGlow: get().profile.badgeGlow,
+            profileBanner: get().profile.profileBanner,
+          },
           toasts: keepToasts,
         });
       },
@@ -1099,6 +1150,9 @@ export const useGame = create<State>()(
           altNames: Array.isArray(s.profile?.altNames) ? s.profile.altNames : [],
           accent: s.profile?.accent ?? null,
           gradient: s.profile?.gradient ?? null,
+          nameGradient: s.profile?.nameGradient ?? null,
+          badgeGlow: s.profile?.badgeGlow ?? null,
+          profileBanner: s.profile?.profileBanner ?? null,
           bio: s.profile?.bio ?? null,
         };
         if (profile.anonymousNumber && !profile.phoneNumber) profile.phoneNumber = generateAnonymousNumber();

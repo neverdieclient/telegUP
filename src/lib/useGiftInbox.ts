@@ -113,6 +113,9 @@ export function useGiftInbox(): { flush: () => void } {
               bio: row.bio ?? null,
               accent: row.accent ?? null,
               gradient: row.gradient ?? null,
+              nameGradient: row.name_gradient ?? null,
+              badgeGlow: row.badge_glow ?? null,
+              profileBanner: row.profile_banner ?? null,
             });
           }
         }
