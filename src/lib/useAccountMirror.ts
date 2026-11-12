@@ -2,12 +2,18 @@ import { useEffect, useRef } from "react";
 import { useGame } from "../store/useGame";
 import { useAuth, upsertProfile } from "./players";
 import { onlineEnabled, supabase } from "./supabase";
+import { GUEST_SCOPE, onlineScope } from "./scopedStorage";
 
 /**
  * Keeps the local profile and the signed-in Supabase account in sync:
  * stores the account id in the game store, adopts the account username
  * as the in-game nickname (only until the player renames themselves) and
  * makes sure the shared profile row exists.
+ *
+ * It also owns the local save: every account keeps its own slot, so the
+ * moment the signed-in account changes the whole save is swapped. A brand new
+ * account therefore starts from nothing, and the account you come back to is
+ * restored exactly as it was left.
  */
 export function useAccountMirror() {
   const { user, loading } = useAuth();
@@ -19,7 +25,12 @@ export function useAccountMirror() {
 
   useEffect(() => {
     if (!onlineEnabled || loading) return;
+
+    // the save of the account that is signed in — opened before the account
+    // id is published, so nothing of the previous account can be pushed up
+    useGame.getState().switchAccountScope(user ? onlineScope(user.id) : GUEST_SCOPE);
     setOnlineUserId(user?.id ?? null);
+
     if (!user) {
       mirroredFor.current = null;
       return;

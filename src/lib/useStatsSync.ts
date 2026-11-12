@@ -21,6 +21,7 @@ import { pushProfileSafe, pullCloudSave } from "./players";
  */
 export function useStatsSync() {
   const onlineUserId = useGame((s) => s.onlineUserId);
+  const accountScope = useGame((s) => s.accountScope);
 
   // owner-made gifts are shared server-side, so pull the catalogue on boot and
   // keep it fresh while the tab is open
@@ -38,28 +39,30 @@ export function useStatsSync() {
   // ---- 1. pull the cloud save once per account ----
   useEffect(() => {
     if (!onlineEnabled || !supabase || !onlineUserId) return;
+    // one pull per account: the local slot already holds the save of an
+    // account this browser has seen before, and a stale server row would
+    // overwrite gifts the player has not pushed yet
+    const key = `${accountScope}|${onlineUserId}`;
     if (useGame.getState().cloudLoadedFor === onlineUserId) {
-      pulledFor.current = onlineUserId;
+      pulledFor.current = key;
       return;
     }
-    if (pulledFor.current === onlineUserId) return;
-    pulledFor.current = onlineUserId;
+    if (pulledFor.current === key) return;
+    pulledFor.current = key;
 
-    let dead = false;
     void (async () => {
       const save = await pullCloudSave();
-      if (dead) return;
+      // the account may have changed while the request was running — the save
+      // of the old account must not land in the new one
+      const now = useGame.getState();
+      if (now.onlineUserId !== onlineUserId || now.accountScope !== accountScope) return;
       if (save && (save.stars > 0 || (save.inventory?.length ?? 0) > 0)) {
-        useGame.getState().adoptCloudSave(save);
+        now.adoptCloudSave(save);
       }
-      useGame.getState().setCloudLoadedFor(onlineUserId);
-      useGame.getState().setOwnerSyncSeen(save?.owner_synced_at ?? null);
+      now.setCloudLoadedFor(onlineUserId);
+      now.setOwnerSyncSeen(save?.owner_synced_at ?? null);
     })();
-
-    return () => {
-      dead = true;
-    };
-  }, [onlineUserId]);
+  }, [onlineUserId, accountScope]);
 
   // ---- 2. push local changes once the save is in memory ----
   useEffect(() => {

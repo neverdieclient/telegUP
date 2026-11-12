@@ -16,6 +16,13 @@ import { boostState } from "../lib/starBoost";
 import { onBanSignal } from "../lib/banSignal";
 import { DEFAULT_THEME, type ThemeId } from "../lib/theme";
 import { rollUsername, USERNAME_BOX_PRICE } from "../lib/usernameBox";
+import {
+  getScope,
+  readAccountState,
+  scopedStorage,
+  setScope,
+  STORE_KEY,
+} from "../lib/scopedStorage";
 
 /**
  * Store-side lookups that also see owner-made gifts.
@@ -266,6 +273,18 @@ type State = {
   onlineUserId: string | null;
   setOnlineUserId: (id: string | null) => void;
   /**
+   * The account whose local save is currently open (see lib/scopedStorage).
+   * Every account owns a slot, so switching accounts swaps the whole save.
+   */
+  accountScope: string;
+  /**
+   * Open another account's slot: the save on screen is flushed into the slot
+   * it belongs to, the state is reset and the other account's save is loaded
+   * back. A brand new account therefore starts from nothing while the account
+   * you come back to is restored exactly as it was left.
+   */
+  switchAccountScope: (scope: string) => void;
+  /**
    * Set when the server reports this account / IP / device is banned.
    * Drives the full-screen block notice; the server also enforces it.
    */
@@ -506,12 +525,78 @@ function randomDigits(): string {
   return digits;
 }
 
+/**
+ * Fill in everything an older save did not have.
+ *
+ * Used by the persist migration and when a saved account slot is loaded
+ * back, so a save from any build opens without a missing field.
+ */
+function normalizeProfile(p: Partial<Profile> | undefined): Profile {
+  return {
+    ...initialState.profile,
+    ...(p ?? {}),
+    badges: p?.badges ?? [],
+    marks: Array.isArray(p?.marks) ? p.marks : [],
+    purchasedUsernames: p?.purchasedUsernames ?? [],
+    collectibleUsername: p?.collectibleUsername ?? null,
+    phoneNumber: p?.phoneNumber ?? null,
+    customNickname: Boolean(p?.customNickname),
+    altNames: Array.isArray(p?.altNames) ? p.altNames : [],
+    accent: p?.accent ?? null,
+    gradient: p?.gradient ?? null,
+    nameGradient: p?.nameGradient ?? null,
+    badgeGlow: p?.badgeGlow ?? null,
+    profileBanner: p?.profileBanner ?? null,
+    avatarUrl: p?.avatarUrl ?? null,
+    bio: p?.bio ?? null,
+  };
+}
+
+/**
+ * The state of a brand new account.
+ *
+ * Nothing is carried over from the account that was open before: the stars,
+ * the gifts, the cosmetics and the nickname all start from scratch. Only the
+ * device preferences (theme, sound, device, owner switches) are kept — they
+ * belong to the browser, not to the player.
+ */
+function freshAccount(keep: State): Partial<State> {
+  return {
+    stars: initialState.stars,
+    coins: 0,
+    onlineUserId: null,
+    cloudLoadedFor: null,
+    ownerSyncSeen: null,
+    banned: false,
+    inventory: [],
+    profile: normalizeProfile({
+      ...initialState.profile,
+      phoneNumber: generateAnonymousNumber(),
+    }),
+    joinedAt: Date.now(),
+    lastFreeCaseAt: null,
+    lastDailyAt: null,
+    lastFortuneAt: null,
+    stats: { ...emptyStats },
+    shopItems: [],
+    // the owner switches belong to the device, the luck boost to the account
+    admin: { ...keep.admin, upgradeLuck: 100 },
+    settings: keep.settings,
+    theme: keep.theme,
+    deviceMode: keep.deviceMode,
+    deviceChosen: keep.deviceChosen,
+    toasts: keep.toasts,
+  };
+}
+
 /* ----------------------------------------------------------------- store */
 
 export const useGame = create<State>()(
   persist(
     (set, get) => ({
       ...initialState,
+      /** the account slot that is open right now */
+      accountScope: getScope(),
 
       addStars: (n) => set((s) => ({ stars: s.stars + Math.round(n * earnFactor(s.admin)) })),
       spendStars: (n) => {
@@ -928,6 +1013,65 @@ export const useGame = create<State>()(
       setBanned: (b) => set({ banned: b }),
       setOwnerSyncSeen: (stamp) => set({ ownerSyncSeen: stamp }),
 
+      /**
+       * Open another account's local slot.
+       *
+       * The order matters a lot:
+       *   1. the save that is on screen belongs to the account that is open
+       *      now — it is flushed into that slot, so the account you leave
+       *      keeps every star, gift and cosmetic;
+       *   2. what the other account left in this browser is read back;
+       *   3. only then the storage is pointed at the new slot, so the state
+       *      that is written next lands in the right place.
+       *
+       * A brand new account has no slot of its own, so it starts from the
+       * fresh baseline — nothing of the previous account is carried over.
+       *
+       * The cloud copy of the account is *not* pulled again here: the slot
+       * already holds this account's save, and a stale server row would
+       * overwrite gifts the player has not pushed yet. The pull happens once
+       * per account, the first time this browser sees it.
+       */
+      switchAccountScope: (scope) => {
+        const state = get();
+        if (state.accountScope === scope) return;
+
+        // 1. the current save belongs to the slot that is open now
+        const opts = useGame.persist.getOptions();
+        if (opts.partialize && opts.storage) {
+          opts.storage.setItem(STORE_KEY, {
+            state: opts.partialize({ ...state }),
+            version: opts.version ?? 0,
+          });
+        }
+
+        // 2. what did the other account leave behind in this browser?
+        const saved = readAccountState(scope);
+        const restored = saved
+          ? ({
+              ...saved,
+              profile: normalizeProfile(saved.profile as Partial<Profile> | undefined),
+              stats: { ...emptyStats, ...((saved.stats as object) ?? {}) },
+            } as unknown as Partial<State>)
+          : null;
+
+        // 3. from here on every write goes into the new slot
+        setScope(scope);
+
+        // 4. a new account starts from nothing, the old one gets its save back
+        set({
+          ...freshAccount(state),
+          ...(restored ?? {}),
+          // the device preferences belong to the browser, not to the account
+          settings: state.settings,
+          theme: state.theme,
+          deviceMode: state.deviceMode,
+          deviceChosen: state.deviceChosen,
+          toasts: state.toasts,
+          accountScope: scope,
+        });
+      },
+
       cloudLoadedFor: null as string | null,
       setCloudLoadedFor: (id) => set({ cloudLoadedFor: id }),
 
@@ -1137,9 +1281,13 @@ export const useGame = create<State>()(
       dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     }),
     {
-      name: "telegup:state:v2",
+      name: STORE_KEY,
       version: 5,
-      storage: createJSONStorage(() => localStorage),
+      /**
+       * Every account owns its own slot (see lib/scopedStorage), so the save
+       * of one player can never end up under another account.
+       */
+      storage: createJSONStorage(() => scopedStorage),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         if (!Array.isArray(state.profile?.marks)) {
@@ -1151,24 +1299,7 @@ export const useGame = create<State>()(
       },
       migrate: (persisted: unknown) => {
         const s = (persisted ?? {}) as Partial<State> & { profile?: Partial<Profile> };
-        const profile: Profile = {
-          ...initialState.profile,
-          ...(s.profile ?? {}),
-          badges: s.profile?.badges ?? [],
-          marks: Array.isArray(s.profile?.marks) ? s.profile.marks : [],
-          purchasedUsernames: s.profile?.purchasedUsernames ?? [],
-          collectibleUsername: s.profile?.collectibleUsername ?? null,
-          phoneNumber: s.profile?.phoneNumber ?? null,
-          customNickname: Boolean(s.profile?.customNickname),
-          altNames: Array.isArray(s.profile?.altNames) ? s.profile.altNames : [],
-          accent: s.profile?.accent ?? null,
-          gradient: s.profile?.gradient ?? null,
-          nameGradient: s.profile?.nameGradient ?? null,
-          badgeGlow: s.profile?.badgeGlow ?? null,
-          profileBanner: s.profile?.profileBanner ?? null,
-          avatarUrl: s.profile?.avatarUrl ?? null,
-          bio: s.profile?.bio ?? null,
-        };
+        const profile: Profile = normalizeProfile(s.profile);
         if (profile.anonymousNumber && !profile.phoneNumber) profile.phoneNumber = generateAnonymousNumber();
         // older saves could carry the mark after the tier was removed — drop
         // the orphan so the tick really disappears

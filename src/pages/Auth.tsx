@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { signIn, signUp } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 import { localSignIn, localSignUp } from "../lib/localAuth";
+import { localScope } from "../lib/scopedStorage";
 import { Button } from "../components/ui/Button";
 import { StarIcon } from "../components/gifts/GiftArt";
 import { useGame } from "../store/useGame";
@@ -33,8 +34,11 @@ export default function Auth() {
         if (res.error) {
           setError(res.error);
         } else {
+          // open the slot of this account: a new one starts from scratch and
+          // a known one comes back with everything it had saved here
+          useGame.getState().switchAccountScope(localScope(res.account!.email));
           // keep the same nickname the player registered with
-          useGame.getState().setNickname(res.account!.username);
+          useGame.getState().adoptNickname(res.account!.username);
           setOkMsg("Аккаунт создан. Заходим…");
           window.setTimeout(() => nav("/app", { replace: true }), 250);
         }
@@ -43,7 +47,8 @@ export default function Auth() {
         if (res.error) {
           setError(res.error);
         } else {
-          useGame.getState().setNickname(res.account!.username);
+          useGame.getState().switchAccountScope(localScope(res.account!.email));
+          useGame.getState().adoptNickname(res.account!.username);
           nav("/app", { replace: true });
         }
       }
