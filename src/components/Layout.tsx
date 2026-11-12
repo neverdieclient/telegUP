@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useGame } from "../store/useGame";
 import { StarIcon } from "./gifts/GiftArt";
 import { ToastStack } from "./Toasts";
+import { AdSlot } from "./AdSlot";
 import { DISCLAIMER } from "../data/gifts";
 
 type NavItem = { to: string; label: string; short: string; icon: string };
@@ -190,6 +191,8 @@ export function Layout() {
       <div className="mx-auto flex max-w-[1400px]">
         <SideNav />
         <main className="min-w-0 flex-1 px-4 pb-28 pt-5 md:px-6 md:pb-10">
+          {/* 300×250 between the nav and content — does not interrupt play. */}
+          <AdSlot id="inline" className="mx-auto mb-5 max-w-[300px]" />
           <Outlet />
         </main>
       </div>

@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { CASES, DISCLAIMER, GIFTS } from "../data/gifts";
 import { StarIcon } from "../components/gifts/GiftArt";
+import { AdSlot } from "../components/AdSlot";
 
 const MINIGAMES = ["Crash", "Mines", "PvP", "Dice", "Монетка", "Колесо", "Tower", "Hi-Lo"];
 
@@ -198,6 +199,10 @@ export default function Landing() {
           </div>
         </motion.div>
 
+        {/* banner: the hero is where most visitors land, so the top slot sits
+            right under it rather than pushing the headline down */}
+        <AdSlot id="top" className="relative z-10 mt-10 hidden w-full max-w-[728px] md:block" />
+
         {/* scroll cue */}
         <motion.div
           animate={{ y: [0, 7, 0], opacity: [0.25, 0.6, 0.25] }}
@@ -263,6 +268,7 @@ export default function Landing() {
       </section>
 
       <footer className="relative z-10 border-t border-white/6 px-5 py-8 text-center">
+        <AdSlot id="footer" className="mb-6 w-full max-w-[320px]" />
         <p className="text-[12.5px] font-semibold text-white/35">{DISCLAIMER}</p>
         <p className="mt-1.5 text-[11px] text-white/20">
           telegUP — учебный проект. Не связан с Telegram, Fragment или VIRUS GAME BOT.
