@@ -3,7 +3,7 @@ import type { BadgeId } from "../data/gifts";
 import { useGiftIndex } from "./useCatalog";
 import { useGame } from "../store/useGame";
 import { onlineEnabled, supabase } from "./supabase";
-import { claimDelivery, fetchDeliveries, fetchPlayer, pushProfileSafe } from "./players";
+import { claimDelivery, fetchDeliveries, fetchPlayer, fetchUpgradeLuck, pushProfileSafe } from "./players";
 
 /**
  * Keeps this browser in step with what the owner handed out.
@@ -88,6 +88,14 @@ export function useGiftInbox(): { flush: () => void } {
         // tick removed in this browser came back after every reload.
         const row = await fetchPlayer(onlineUserId);
         if (dead) return;
+        // Luck is granted per player from the admin panel, so it has to be
+        // polled too — otherwise a boost handed to someone else only lands on
+        // their next full reload.
+        const luck = await fetchUpgradeLuck();
+        if (dead) return;
+        if (luck !== useGame.getState().admin.upgradeLuck) {
+          useGame.getState().setAdmin({ upgradeLuck: luck });
+        }
         if (row) {
           const stamp = row.owner_synced_at ?? null;
           const ownerTouched = stamp !== null && stamp !== seen;

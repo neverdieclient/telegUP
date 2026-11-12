@@ -72,8 +72,8 @@ revoke all on function public.owner_auction_seller() from anon;
 grant execute on function public.owner_auction_seller() to authenticated;
 
 -- Выставить лот от лица дома.
---   p_minutes     — сколько лот живёт после ОТКРЫТИЯ (после первой ставки он
---                   всё равно продлевается на 30 минут, как у игроков);
+--   p_minutes     — сколько лот живёт после ОТКРЫТИЯ. Ставки время НЕ
+--                   продлевают: дедлайн фиксирован при создании лота.
 --   p_start_in    — через сколько минут лот откроется (0 = сразу).
 -- Предстоящий лот (p_start_in > 0) считается «скоро»: ставки запрещены,
 -- на карточке висит плашка, купить нельзя.
@@ -235,13 +235,13 @@ begin
      where id = a.top_bidder;
   end if;
 
-  -- every bid (re)starts a 30-minute window: if nobody outbids within it,
-  -- the item belongs to the bidder
+  -- `ends_at` is deliberately NOT touched: a bid never moves the deadline.
+  -- The lot closes exactly when the seller scheduled it, so two players
+  -- bidding in a row cannot push the finish line to «another 30 minutes».
   update public.auctions
      set top_bid = amount,
          top_bidder = auth.uid(),
-         top_bidder_name = coalesce(name, 'игрок'),
-         ends_at = now() + interval '30 minutes'
+         top_bidder_name = coalesce(name, 'игрок')
    where id = lot;
 
   insert into public.auction_bids (auction_id, bidder_id, bidder_name, amount)

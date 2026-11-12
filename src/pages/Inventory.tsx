@@ -7,7 +7,7 @@ import { MAX_PINNED, useGame } from "../store/useGame";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
 import { UsernameLootbox } from "../components/gifts/UsernameLootbox";
 import { Button } from "../components/ui/Button";
-import { chance, modelUpgradeChance, modelTargets, MODEL_BANDS, type ModelBand } from "../lib/rng";
+import { boostedChance, chance, modelUpgradeChance, modelTargets, MODEL_BANDS, type ModelBand } from "../lib/rng";
 import { sendGift, searchPlayers, type PlayerRow } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 
@@ -50,6 +50,8 @@ export default function Inventory() {
   const giftItem = useGame((s) => s.giftItem);
   const upgradeItemModel = useGame((s) => s.upgradeItemModel);
   const loseItemOnUpgrade = useGame((s) => s.loseItemOnUpgrade);
+  /** owner-granted luck: models use the same multiplier as the wheel */
+  const upgradeLuck = useGame((s) => s.admin.upgradeLuck);
   const toast = useGame((s) => s.toast);
   const profile = useGame((s) => s.profile);
   const setMainUsername = useGame((s) => s.setMainUsername);
@@ -138,7 +140,12 @@ export default function Inventory() {
   const target: Gift | null =
     (modelTargetId && targets.find((t) => t.id === modelTargetId)) || bandTargets[0] || null;
 
-  const targetChance = activeGift && target ? modelUpgradeChance(activeGift, target) : 0;
+  const targetChance =
+    activeGift && target
+      // model odds are capped at 95: a boosted roll should read as «почти
+      // наверняка», never as a guaranteed free upgrade
+      ? boostedChance(modelUpgradeChance(activeGift, target), upgradeLuck, 95)
+      : 0;
 
   const openModelUpgrade = () => {
     setBand("all");

@@ -226,13 +226,12 @@ begin
 
   select nickname into name from public.profiles where id = auth.uid();
 
-  -- every bid (re)starts a 30-minute window: if nobody outbids within it,
-  -- the item belongs to the bidder
+  -- `ends_at` is deliberately NOT touched: a bid never moves the deadline.
+  -- The lot closes exactly when the seller scheduled it.
   update public.auctions
      set top_bid = amount,
          top_bidder = auth.uid(),
-         top_bidder_name = coalesce(name, 'игрок'),
-         ends_at = now() + interval '30 minutes'
+         top_bidder_name = coalesce(name, 'игрок')
    where id = lot;
 
   insert into public.auction_bids (auction_id, bidder_id, bidder_name, amount)

@@ -15,6 +15,7 @@ import {
   adminGiveBadge,
   adminGiveStars,
   adminSetTier,
+  adminSetUpgradeLuck,
   adminTakeBadge,
   adminTakeMark,
   fetchBans,
@@ -732,6 +733,30 @@ export default function Admin() {
     void refreshTarget(target.id);
   };
 
+  /**
+   * Upgrade luck: 100 = honest odds, 200 = ×2, 10000 = ×100. Works on the
+   * selected player, and on the owner's own row when nothing is selected —
+   * so «себе» and «другому игроку» are the same button.
+   */
+  const giveLuckToTarget = async (luck: number) => {
+    const who = isSelf ? "себе" : `@${target!.nickname}`;
+    const label =
+      luck > 100 ? `Бонус удачи ×${luck / 100} · ${who}` : `Бонус удачи снят · ${who}`;
+    if (!onlineEnabled || !user) {
+      // offline build: nothing to persist, just mirror it in this browser
+      setAdmin({ upgradeLuck: luck });
+      toast({ kind: "success", title: label });
+      return;
+    }
+    if (!targetId) {
+      toast({ kind: "error", title: "Не выбран игрок", message: "Войди или выбери аккаунт выше" });
+      return;
+    }
+    await run(`luck:${luck}`, label, () => adminSetUpgradeLuck(targetId, luck));
+    if (isSelf) setAdmin({ upgradeLuck: luck });
+    else void refreshTarget(targetId);
+  };
+
   const giveMarkToTarget = async (mark: CheckMarkKind, label: string, on = true) => {
     if (!target) return;
     await run(
@@ -936,6 +961,35 @@ export default function Admin() {
                 </button>
               ))}
             </div>
+
+            {/* upgrade luck */}
+            <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+              бонус удачи в апгрейде
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { luck: 200, label: "×2 шанс" },
+                { luck: 10_000, label: "×100 шанс" },
+                { luck: 100, label: "снять" },
+              ].map((b) => (
+                <Button
+                  key={b.luck}
+                  size="sm"
+                  variant={b.luck === 100 ? "ghost" : "primary"}
+                  disabled={!!busy || !targetId || (isSelf && admin.upgradeLuck === b.luck)}
+                  onClick={() => giveLuckToTarget(b.luck)}
+                >
+                  {b.label}
+                </Button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[10px] leading-snug text-white/30">
+              {isSelf
+                ? admin.upgradeLuck > 100
+                  ? `Сейчас активен бонус ×${admin.upgradeLuck / 100} — действует на тебя`
+                  : "Сейчас действует обычный шанс"
+                : `Выдача применится к @${target?.nickname ?? "—"} (нужно выбрать игрока выше)`}
+            </p>
 
             {/* verification marks */}
             <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">

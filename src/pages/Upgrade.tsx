@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import { GIFTS, RARITY_META, type Gift } from "../data/gifts";
 import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
-import { chance, rand } from "../lib/rng";
+import { boostedChance, chance, rand } from "../lib/rng";
 import { useGame } from "../store/useGame";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
@@ -147,6 +147,8 @@ export default function UpgradePage() {
   const bumpStat = useGame((s) => s.bumpStat);
   const toast = useGame((s) => s.toast);
   const alwaysWin = useGame((s) => s.admin.alwaysWinUpgrade);
+  /** owner-granted luck: 100 = honest odds, 200 = ×2, 10000 = ×100 */
+  const luckBoost = useGame((s) => s.admin.upgradeLuck);
 
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [targetId, setTargetId] = useState<string>("");
@@ -164,10 +166,16 @@ export default function UpgradePage() {
   const source = sourceItem ? GIFT_BY_ID[sourceItem.giftId] : null;
   const target = targetId ? GIFT_BY_ID[targetId] ?? null : null;
 
-  const chancePct = useMemo(
+  const baseChance = useMemo(
     () => (presetMult ? presetChance(presetMult) : source && target ? calcChance(source, target) : 0),
     [presetMult, source, target],
   );
+  /**
+   * What the wheel actually rolls: the honest chance scaled by the player's
+   * luck boost. Everything below (arc, label, roll) reads this one value, so
+   * the displayed percentage can never disagree with the outcome.
+   */
+  const chancePct = boostedChance(baseChance, luckBoost);
   const targetStars = source && presetMult ? Math.round(source.stars * presetMult) : 0;
   const canSpin =
     !!source &&
@@ -271,6 +279,12 @@ export default function UpgradePage() {
           <span className="inline-flex items-center gap-2 self-start rounded-xl border border-mythic/30 bg-mythic/10 px-3 py-2 text-[11px] font-bold text-mythic">
             <span className="size-1.5 animate-pulse rounded-full bg-mythic" />
             ADMIN: 100% win
+          </span>
+        )}
+        {!alwaysWin && luckBoost > 100 && (
+          <span className="inline-flex items-center gap-2 self-start rounded-xl border border-neon/35 bg-neon/10 px-3 py-2 text-[11px] font-bold text-neon">
+            <span className="size-1.5 animate-pulse rounded-full bg-neon" />
+            Бонус удачи: шанс ×{luckBoost / 100}
           </span>
         )}
       </header>

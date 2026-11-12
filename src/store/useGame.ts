@@ -147,6 +147,13 @@ type State = {
     unlocked: boolean;
     /** 100 = normal payout, 600 = sixfold */
     payoutMultiplier: number;
+    /**
+     * Multiplies the chance of a successful upgrade (both the classic wheel
+     * and model upgrades). 100 = honest odds, 200 = ×2, 10000 = ×100.
+     * The owner hands this out per player; the server is the source of truth
+     * and this mirror only keeps the UI in step after a reload.
+     */
+    upgradeLuck: number;
     freeCases: boolean;
     noCooldown: boolean;
     /** when on, only profile, inventory, Telegram, settings and chat work */
@@ -264,6 +271,8 @@ type State = {
     bio: string | null;
     accent: string | null;
     gradient: string | null;
+    /** owner-granted upgrade luck (100 = honest). Optional so older callers keep working. */
+    upgradeLuck?: number;
   }) => void;
   /**
    * Last `owner_synced_at` this browser already applied. Adoption is skipped
@@ -381,6 +390,7 @@ export const initialState = {
     luckBoost: false,
     unlocked: false,
     payoutMultiplier: 100,
+    upgradeLuck: 100,
     freeCases: false,
     noCooldown: false,
     maintenance: false,
@@ -941,6 +951,8 @@ export const useGame = create<State>()(
             server.altNames.every((n) => s.profile.altNames.includes(n));
           const sameStars = Math.round(server.stars) === Math.round(s.stars);
           const sameNick = server.nickname === s.profile.nickname;
+          const sameLuck =
+            server.upgradeLuck === undefined || (server.upgradeLuck || 100) === s.admin.upgradeLuck;
           const samePhone = (server.phoneNumber ?? null) === (s.profile.phoneNumber ?? null);
           const sameCosmetics =
             server.bio === s.profile.bio &&
@@ -956,6 +968,7 @@ export const useGame = create<State>()(
             sameNick &&
             samePhone &&
             sameCosmetics &&
+            sameLuck &&
             server.tier === s.profile.tier
           ) {
             return {};
@@ -982,6 +995,11 @@ export const useGame = create<State>()(
               accent: server.accent,
               gradient: server.gradient,
             },
+            // luck is a pure owner grant: whatever the server says wins, and
+            // a normal 100 is written too so a revoked boost actually drops.
+            ...(server.upgradeLuck === undefined
+              ? {}
+              : { admin: { ...s.admin, upgradeLuck: server.upgradeLuck || 100 } }),
           };
         }),
 

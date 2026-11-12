@@ -182,6 +182,27 @@ export async function adminSetTier(targetId: string, tier: "Premium" | "Free"): 
   return error ? { error: error.message } : {};
 }
 
+/**
+ * Upgrade luck, in percent of normal odds (100 = honest, 200 = ×2, 10000 = ×100).
+ * `targetId` may be the owner's own id — the same lot has to work for «себе».
+ */
+export async function adminSetUpgradeLuck(targetId: string, luck: number): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_set_upgrade_luck", {
+    target_id: targetId,
+    p_luck: Math.round(luck),
+  });
+  return error ? { error: error.message } : {};
+}
+
+/** The signed-in player's granted upgrade luck (100 when nothing was granted). */
+export async function fetchUpgradeLuck(): Promise<number> {
+  if (!supabase) return 100;
+  const { data, error } = await supabase.rpc("player_get_upgrade_luck");
+  if (error) return 100;
+  return Number(data) || 100;
+}
+
 /* ---------------------------------------------------------------- chat */
 
 export type ChatRow = {

@@ -147,6 +147,19 @@ export function chance(p: number): boolean {
   return rand() * 100 < p;
 }
 
+/**
+ * Upgrade odds with the owner's per-player boost applied.
+ *
+ * `boost` is stored in percent-of-normal (100 = untouched), and the result is
+ * clamped to 0–100 because a probability above 1 would make the wheel land
+ * outside its winning arc. Model upgrades pass their own cap of 95 so a
+ * boosted roll still reads as "very likely", not "guaranteed".
+ */
+export function boostedChance(p: number, boost: number, cap = 100): number {
+  const factor = Math.max(0, boost) / 100;
+  return Math.min(cap, Math.max(0, p * factor));
+}
+
 /* ==================================================== model upgrade (skin) */
 
 /** Same collectible, nicer models: every model variant of one gift. */
