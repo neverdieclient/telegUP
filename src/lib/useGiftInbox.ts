@@ -3,7 +3,7 @@ import type { BadgeId } from "../data/gifts";
 import { useGiftIndex } from "./useCatalog";
 import { useGame } from "../store/useGame";
 import { onlineEnabled, supabase } from "./supabase";
-import { claimDelivery, fetchDeliveries, fetchPlayer, fetchUpgradeLuck, pushProfileSafe } from "./players";
+import { claimDelivery, fetchDeliveries, fetchPlayer, fetchUpgradeLuck, pushProfileSafe, settleAuctions } from "./players";
 
 /**
  * Keeps this browser in step with what the owner handed out.
@@ -118,6 +118,14 @@ export function useGiftInbox(): { flush: () => void } {
         }
 
         // ---- 2. drain deliveries into the inventory
+        //
+        // Before reading the queue, ask the server to close every lot whose
+        // clock ran out. Settlement is what *creates* the delivery for an
+        // auction win, so without this call a winner waited for someone to
+        // open a particular page before the gift appeared at all.
+        await settleAuctions();
+        if (dead) return;
+
         const pending = await fetchDeliveries();
         if (dead || !pending.length) return;
         let added = 0;
