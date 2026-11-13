@@ -45,6 +45,22 @@ const FORMATS = {
   "1080x1920": [1080, 1920],
 };
 
+/**
+ * The size the file is written in.
+ *
+ * The small strips are rendered at 2× (the type has to stay crisp when a
+ * network scales the creative up), the square and the story at 1× — they are
+ * already big, and a 2160×3840 file needs H.264 level 6, which the Windows
+ * player refuses with «Ошибка при выполнении приложения-сервера».
+ */
+const TARGET = {
+  "970x250": "1940x500",
+  "728x90": "1456x180",
+  "1200x300": "2400x600",
+  "1080x1080": "1080x1080",
+  "1080x1920": "1080x1920",
+};
+
 const here = import.meta.dirname;
 const dir = path.join(here, "banner-video");
 
@@ -107,13 +123,15 @@ try {
     const mp4 = path.join(dir, `${id}.mp4`);
     const webm = path.join(dir, `${id}.webm`);
 
-    // H.264 needs even dimensions; all our formats are, but scale hard anyway
+    // H.264 needs even dimensions; all our formats are, but scale hard anyway.
+    // Level 4.2 is the highest every desktop player and every phone decodes.
     execFileSync(FFMPEG, [
       "-y", "-loglevel", "error",
       "-framerate", String(FPS),
       "-i", pattern,
-      "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-      "-c:v", "libx264", "-preset", "slow", "-crf", "20",
+      "-vf", `scale=${TARGET[id]}`,
+      "-c:v", "libx264", "-profile:v", "high", "-level", "4.2",
+      "-preset", "slow", "-crf", "20",
       "-pix_fmt", "yuv420p", "-movflags", "+faststart",
       "-an", mp4,
     ]);
@@ -122,6 +140,7 @@ try {
       "-y", "-loglevel", "error",
       "-framerate", String(FPS),
       "-i", pattern,
+      "-vf", `scale=${TARGET[id]}`,
       "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "34", "-row-mt", "1",
       "-pix_fmt", "yuv420p", "-an", webm,
     ]);
