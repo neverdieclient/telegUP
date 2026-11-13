@@ -1,0 +1,25 @@
+# Cloudflare Pages headers.
+# GitHub Pages ignores this file — it only works on Cloudflare.
+#
+# Static assets are immutable (their name contains a content hash), so they
+# can be cached for a year. The HTML must never be cached, otherwise players
+# keep getting an old bundle after a deploy.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/gifts/*
+  Cache-Control: public, max-age=604800
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/404.html
+  Cache-Control: public, max-age=0, must-revalidate

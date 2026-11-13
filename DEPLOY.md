@@ -103,7 +103,48 @@ git push -u origin main
 
 ---
 
-## 4. Локальная проверка сборки
+## 4. Свой адрес — бесплатно
+
+Хостинг (Cloudflare Pages) уже бесплатный, остаётся придумать адрес. Варианты
+от «совсем бесплатно» до «нормальный домен»:
+
+| Адрес | Цена | Как получить | Нюанс |
+| --- | --- | --- | --- |
+| `tg.pages.dev` | 0 ₽ | Переименовать проект в Cloudflare (Workers & Pages → твой проект → Settings → Name) | Мгновенно. Короткое имя проекта — короткий адрес |
+| `telegup.eu.org` | 0 ₽ | Заявка на [nic.eu.org](https://nic.eu.org): указать NS-серверы Cloudflare и отправить письмо | Настоящий бесплатный домен навсегда, но approve вручную: 1–7 дней (иногда до месяца) |
+| `telegup.duckdns.org` | 0 ₽ | Зарегистрироваться на [duckdns.org](https://www.duckdns.org) | Мгновенно, сертификат Let's Encrypt выдают |
+| `telegup.mooo.com` и подобные | 0 ₽ | Зарегистрироваться на [freedns.afraid.org](https://freedns.afraid.org) | Мгновенно, но в адресе чужой домен |
+| `telegup.рф` / `telegup.ru` | 200–600 ₽/год | reg.ru / beget / timeweb | Единственный вариант, где адрес выглядит как настоящий домен |
+
+### Как привязать любой из них (5 минут, 0 ₽)
+
+1. Cloudflare → Workers & Pages → твой проект → **Custom domains** → **Set up a
+   custom domain** → вписать домен.
+2. Cloudflare выдаст CNAME-цель (например `telegup.pages.dev`).
+3. В панели регистратора домена (или в Cloudflare DNS, если NS уже на них)
+   создать CNAME на этот адрес.
+4. SSL-сертификат Cloudflare выпустит сам и бесплатно — ничего настраивать
+   не нужно.
+
+Если адрес выдан через eu.org / DuckDNS / FreeDNS, их NS-записи (или CNAME)
+направляются на Cloudflare — дальше всё как выше.
+
+### Деплой из GitHub (без панели Cloudflare)
+
+Файл `.github/workflows/deploy-cloudflare.yml` собирает сайт и публикует его в
+Cloudflare Pages при каждом пуше. Чтобы он заработал, добавь в репозитории
+(Settings → Secrets and variables → Actions) два секрета:
+
+- `CLOUDFLARE_ACCOUNT_ID` — Cloudflare → Workers & Pages → твой проект → Account ID;
+- `CLOUDFLARE_API_TOKEN` — Cloudflare → My Profile → API Tokens → Create Token →
+  шаблон **Cloudflare Pages — Edit**.
+
+Пока секретов нет, работа деплоя просто пропускается — основной пайплайн
+(GitHub Pages) от этого не ломается.
+
+---
+
+## 5. Локальная проверка сборки
 
 ```bash
 npm install

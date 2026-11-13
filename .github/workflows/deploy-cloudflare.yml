@@ -1,0 +1,55 @@
+name: Deploy to Cloudflare Pages
+
+# Free hosting: https://<project>.pages.dev — the site itself costs nothing.
+# GitHub Pages (deploy.yml) keeps working as a mirror at
+# https://neverdieclient.github.io/telegUP/.
+#
+# Two ways to publish:
+#   A) through the Cloudflare dashboard (Workers & Pages → Connect to Git) —
+#      then this workflow is not needed at all;
+#   B) through this workflow — add the two secrets below in the repository
+#      settings (Settings → Secrets and variables → Actions).
+#
+# Without the secrets the job is skipped, so a missing token never breaks
+# the main pipeline.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' && secrets.CLOUDFLARE_API_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        # the site lives at the root of *.pages.dev, so the base path is "/"
+        # (the GitHub Pages build uses /telegUP/ instead — see deploy.yml)
+        run: npm run build
+        env:
+          VITE_BASE: /
+
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=telegup --branch=main
