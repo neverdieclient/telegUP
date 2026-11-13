@@ -106,9 +106,11 @@ const FONTS = `
  * story switch to a vertical stack with the same content.
  */
 function creative(id, { w, h, kind }) {
-  const u = h / 250;
-  const hero = art.hero ?? art.second ?? null;
+  // the layout unit is a fraction of the short side: a 90 px strip and a
+  // 1080×1920 story must both stay inside their own frame
   const stacked = kind === "square" || kind === "story";
+  const u = stacked ? w / 250 : h / 250;
+  const hero = art.hero ?? art.second ?? null;
 
   return `
 <!-- ${id} -->
@@ -251,14 +253,24 @@ html,body{background:#05060a;color:#fff;font-family:M,sans-serif;-webkit-font-sm
 .banner.tiny .domain-text{gap:calc(var(--u)*6px)}
 
 /* vertical formats get more air */
-.banner.square .word,.banner.story .word{font-size:calc(var(--u)*60px)}
-.banner.square .headline,.banner.story .headline{font-size:calc(var(--u)*34px)}
+/* vertical formats get their own scale: the unit is the width, so a 1080
+   square and a 1080×1920 story both stay inside their frame */
+.banner.square .word{font-size:calc(var(--u)*26px)}
+.banner.square .headline{font-size:calc(var(--u)*14px)}
+.banner.square .kicker{font-size:calc(var(--u)*7px)}
+.banner.square .stage{width:calc(var(--u)*97px);height:calc(var(--u)*97px)}
+.banner.square .gift{width:calc(var(--u)*78px);height:calc(var(--u)*78px)}
+.banner.square .url{font-size:calc(var(--u)*17px)}
+.banner.square .cta{font-size:calc(var(--u)*9px);padding:calc(var(--u)*6px) calc(var(--u)*13px)}
+
+.banner.story .word{font-size:calc(var(--u)*30px)}
+.banner.story .headline{font-size:calc(var(--u)*16px)}
+.banner.story .kicker{font-size:calc(var(--u)*8px)}
+.banner.story .stage{width:calc(var(--u)*112px);height:calc(var(--u)*112px)}
+.banner.story .gift{width:calc(var(--u)*90px);height:calc(var(--u)*90px)}
+.banner.story .url{font-size:calc(var(--u)*20px)}
+.banner.story .cta{font-size:calc(var(--u)*11px);padding:calc(var(--u)*7px) calc(var(--u)*15px)}
 .banner.square .act.domain,.banner.story .act.domain{flex-direction:column}
-.banner.square .stage,.banner.story .stage{width:calc(var(--u)*300px);height:calc(var(--u)*300px)}
-.banner.square .gift,.banner.story .gift{width:calc(var(--u)*240px);height:calc(var(--u)*240px)}
-.banner.square .url,.banner.story .url{font-size:calc(var(--u)*42px)}
-.banner.square .cta,.banner.story .cta{font-size:calc(var(--u)*24px);padding:calc(var(--u)*16px) calc(var(--u)*32px)}
-.banner.square .kicker,.banner.story .kicker{font-size:calc(var(--u)*16px)}
 `;
 
 /**
