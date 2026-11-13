@@ -29,10 +29,17 @@ repair.log
 trailer/frames/
 trailer/frames-out/
 trailer/frames-update/
+trailer/frames-v15/
 trailer/preview/
 trailer/*.mp4
+trailer/*.webm
 trailer/out/
 trailer/banners.html
+trailer/banners/
+trailer/banner-video/
+trailer/trailer.html
+trailer/update.html
+trailer/v15.html
 
 # Editor directories and files
 .vscode/*
