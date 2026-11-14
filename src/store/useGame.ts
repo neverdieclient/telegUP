@@ -10,7 +10,11 @@ import {
   type Gift,
   type PurchasedShopItem,
 } from "../data/gifts";
-import { pick, randInt, rollModelUpgrade, uid } from "../lib/rng";
+import { pick, randInt, rollGuarantee, uid } from "../lib/rng";
+import { guaranteeCost } from "../lib/pricing";
+import { rollGiftNumber } from "../lib/giftNumbers";
+import { backgroundOf, rollBackground } from "../data/backgrounds";
+import { patternOf, rollPattern } from "../data/patterns";
 import { getGiftIndex } from "../data/customGifts";
 import { boostState } from "../lib/starBoost";
 import { onBanSignal } from "../lib/banSignal";
@@ -51,6 +55,40 @@ const giftOf = (id: string | null | undefined) =>
 
 /** Built-ins plus everything currently published in `custom_gifts`. */
 const allGifts = (): Gift[] => [...GIFTS, ...Object.values(getGiftIndex())];
+
+/**
+ * Взять свободный номер коллекции и записать его в книгу номеров.
+ *
+ * Номер выдаётся один раз: как только подарок его получил, номер остаётся в
+ * `numberBook` и второму подарку той же коллекции не достанется — в Телеграме
+ * номер «зарегистрирован» за владельцем, и здесь так же.
+ */
+function takeNumber(
+  book: Record<string, number[]> | undefined,
+  slug: string,
+): { numberBook: Record<string, number[]>; num: number | undefined } {
+  const safe = book ?? {};
+  const used = Array.isArray(safe[slug]) ? safe[slug] : [];
+  const num = rollGiftNumber(used);
+  if (num === null) return { numberBook: safe, num: undefined };
+  return { numberBook: { ...safe, [slug]: [...used, num] }, num };
+}
+
+/**
+ * Что подарок получает при улучшении: номер, фон и узор, как в Телеграме.
+ *
+ * Номер уникален внутри коллекции, а фон и узор выпадают чистым случаем из
+ * всех вариантов — делений на «редкий/эпический» у них нет.
+ */
+function upgradedLook(book: Record<string, number[]> | undefined, slug: string) {
+  const { numberBook, num } = takeNumber(book, slug);
+  return {
+    numberBook,
+    num,
+    bg: rollBackground().id,
+    pattern: rollPattern().id,
+  };
+}
 
 /**
  * Everything a player EARNs is scaled by the owner's payout multiplier and, on
@@ -155,6 +193,17 @@ export type InventoryItem = {
    * Optional so items stored before pinning existed still load.
    */
   pinned?: boolean;
+  /**
+   * Номер подарка внутри коллекции, как в Телеграме (`#354 046`).
+   *
+   * Появляется только после улучшения: у базового подарка номера нет, и
+   * второй такой же номер не получит никто — он записан в `numberBook`.
+   */
+  num?: number;
+  /** id фона из `data/backgrounds`. Тоже появляется только после улучшения. */
+  bg?: string;
+  /** id узора из `data/patterns` — тиснение поверх фона, как в Телеграме. */
+  pattern?: string;
 };
 
 /** Telegram shows a short row of pinned gifts; three fits our grid. */
@@ -187,20 +236,20 @@ export function pinnedOrderOf(s: {
 }
 
 /**
- * Guaranteed model upgrade: the drop is always a better model, but the player
+ * Guaranteed model upgrade: the drop is a random model of the same
+ * collectible — any of them, the best one as likely as the worst. The player
  * cannot pick which one. Price = value gap to the rolled model, plus a 10%
- * skinning fee (and a 10★ floor), so a resale can never print money.
+ * skinning fee (and a 10★ floor), so a resale can never print money and a
+ * downgrade still costs something instead of paying the player.
+ *
+ * The formulas live in `lib/pricing` — they are needed by the shop UI too.
  */
-export const GUARANTEE_FEE = 1.1;
-export const GUARANTEE_MIN = 10;
-
-export const guaranteePrice = (gap: number) =>
-  Math.max(GUARANTEE_MIN, Math.round(Math.max(0, gap) * GUARANTEE_FEE));
+export { GUARANTEE_FEE, GUARANTEE_MIN, guaranteePrice, guaranteeCost } from "../lib/pricing";
 
 /** What the guaranteed roll did, so the UI can explain a failure. */
 export type GuaranteedUpgradeResult = {
   ok: boolean;
-  reason?: "missing" | "top" | "disabled" | "stars";
+  reason?: "missing" | "top" | "disabled" | "stars" | "model";
   /** stars charged on success, or the price that was missing */
   cost?: number;
   /** the model that dropped (success) or would have dropped (no stars) */
@@ -312,6 +361,14 @@ type State = {
    * `useTonClaims`; a lot in here is shown as «занят» and cannot be bought.
    */
   tonTaken: Record<string, string>;
+  /**
+   * Выданные номера подарков: slug коллекции → занятые номера.
+   *
+   * Номер выдаётся один раз и больше не повторяется — «он уже в базе
+   * зарегистрирован». Книга живёт в сохранении, поэтому номер переживает
+   * перезагрузку и не достанется второму подарку той же коллекции.
+   */
+  numberBook: Record<string, number[]>;
 
   // ---- profile ----
   profile: Profile;
@@ -698,6 +755,7 @@ export const initialState = {
   purchases: [] as PurchaseRecord[],
   tonOwned: [] as string[],
   tonTaken: {} as Record<string, string>,
+  numberBook: {} as Record<string, number[]>,
   profile: {
     nickname: "telegup_user",
     customNickname: false,
@@ -891,6 +949,7 @@ function freshAccount(keep: State): Partial<State> {
     purchases: [],
     tonOwned: [],
     tonTaken: {},
+    numberBook: {},
     profile: normalizeProfile({
       ...initialState.profile,
       phoneNumber: generateAnonymousNumber(),
@@ -1195,13 +1254,25 @@ export const useGame = create<State>()(
       },
 
       addItem: (giftId, source) => {
+        const gift = giftOf(giftId);
+        // улучшенный подарок получает номер коллекции и случайный фон — как в
+        // Телеграме. Остальные источники (кейс, маркет, набор) дают базовый
+        // подарок без номера и фона.
+        const look =
+          source === "upgrade" && gift
+            ? upgradedLook(get().numberBook, gift.slug)
+            : null;
         const item: InventoryItem = {
           id: uid("inv"),
           giftId,
           acquiredAt: Date.now(),
           source,
+          ...(look ? { num: look.num, bg: look.bg, pattern: look.pattern } : {}),
         };
-        set((s) => ({ inventory: [item, ...s.inventory] }));
+        set((s) => ({
+          inventory: [item, ...s.inventory],
+          ...(look ? { numberBook: look.numberBook } : {}),
+        }));
         return item;
       },
 
@@ -1318,6 +1389,8 @@ export const useGame = create<State>()(
         if (!source) return null;
         const target = giftOf(targetGiftId);
         if (!target || target.slug !== giftOf(source.giftId)?.slug) return null;
+        // улучшенный подарок получает номер коллекции, фон и узор — как в Телеграме
+        const { numberBook, num, bg, pattern } = upgradedLook(get().numberBook, target.slug);
         const next: InventoryItem = {
           id: uid("inv"),
           giftId: targetGiftId,
@@ -1325,9 +1398,13 @@ export const useGame = create<State>()(
           // апгрейд наборного подарка остаётся наборным, иначе его можно было
           // бы «отмыть» в продаваемый и напечатать звёзды
           source: source.source === "combo" ? "combo" : "upgrade",
+          num,
+          bg,
+          pattern,
         };
         set((s) => ({
           inventory: [next, ...s.inventory.filter((i) => i.id !== instanceId)],
+          numberBook,
           stats: { ...s.stats, upgradesWon: s.stats.upgradesWon + 1 },
         }));
         return next;
@@ -1340,14 +1417,15 @@ export const useGame = create<State>()(
         })),
 
       /**
-       * 100% successful model upgrade with a random result.
+       * 100% successful model upgrade with a purely random result.
        *
-       * The draw never reaches for a model the player cannot pay for, so the
-       * button cannot silently fail with a "нужно 55 000★" wall: the ceiling is
-       * the priciest model the current balance covers, and `rollModelUpgrade`
-       * biases the pick towards the closest steps under that ceiling. The price
-       * is the value gap to whatever dropped, so a guaranteed roll is a skin
-       * purchase — never a lottery ticket, and never a way to print stars.
+       * The draw is honest: every model of the same collectible can drop, the
+       * best one as often as the cheapest one — no bias towards the top, no
+       * «only better» rule. The price is the value gap to whatever dropped
+       * (a downgrade costs the 10★ minimum), and models the player cannot pay
+       * for are not in the draw, so the button never fails with a surprise
+       * bill. A guaranteed roll is a skin purchase — never a lottery ticket
+       * and never a way to print stars.
        */
       guaranteedUpgrade: (instanceId) => {
         const s = get();
@@ -1357,35 +1435,43 @@ export const useGame = create<State>()(
         const from = giftOf(item.giftId);
         if (!from) return { ok: false, reason: "missing" };
 
-        // strictly better models only: a «гарантированный апгрейд» must never
-        // hand out a cheaper skin of the same collectible
-        const pool = allGifts().filter(
-          (g) => g.slug === from.slug && g.kind === "model" && g.id !== from.id && g.stars > from.stars,
-        );
-        if (!pool.length) return { ok: false, reason: "top" };
+        // улучшать можно только базовый подарок: то, что уже выпало из
+        // апгрейда, — финальная вещь, второй раз её не трогаем
+        if (from.kind !== "gift") return { ok: false, reason: "model" };
 
-        const priced = pool.map((g) => ({ gift: g, cost: guaranteePrice(g.stars - from.stars) }));
-        const cheapest = priced.reduce((a, b) => (b.cost < a.cost ? b : a));
-        if (s.stars < cheapest.cost) {
+        // вся коллекция, кроме текущей модели: выпадает любая, шансы равные
+        const pool = allGifts();
+        const models = pool.filter(
+          (g) => g.slug === from.slug && g.kind === "model" && g.id !== from.id,
+        );
+        if (!models.length) return { ok: false, reason: "top" };
+
+        const drawn = rollGuarantee(from, pool, s.stars);
+        if (!drawn) {
+          const cheapest = models
+            .map((g) => ({ gift: g, cost: guaranteeCost(from.stars, g.stars) }))
+            .reduce((a, b) => (b.cost < a.cost ? b : a));
           return { ok: false, reason: "stars", cost: cheapest.cost, targetGiftId: cheapest.gift.id };
         }
-        // highest model this balance can actually pay for
-        const ceiling = priced
-          .filter((x) => x.cost <= s.stars)
-          .reduce((a, b) => (b.gift.stars > a.gift.stars ? b : a));
-        const target = rollModelUpgrade(from, ceiling.gift.stars, pool) ?? ceiling.gift;
-
-        const cost = guaranteePrice(target.stars - from.stars);
+        const target = drawn.gift;
+        const cost = drawn.cost;
+        // номер коллекции + случайный фон и узор: базовый подарок их не имеет,
+        // улучшенный — имеет всегда
+        const { numberBook, num, bg, pattern } = upgradedLook(s.numberBook, from.slug);
         const next: InventoryItem = {
           id: uid("inv"),
           giftId: target.id,
           acquiredAt: Date.now(),
           source: item.source === "combo" ? "combo" : "upgrade",
+          num,
+          bg,
+          pattern,
         };
         set((st) => ({
           stars: st.stars - cost,
           inventory: [next, ...st.inventory.filter((i) => i.id !== instanceId)],
           pinOrder: st.pinOrder.filter((id) => id !== instanceId),
+          numberBook,
           stats: { ...st.stats, upgradesWon: st.stats.upgradesWon + 1 },
         }));
         return { ok: true, cost, targetGiftId: target.id, item: next };
@@ -1966,11 +2052,20 @@ export const useGame = create<State>()(
     }),
     {
       name: STORE_KEY,
+      // 9 → 10: из набора узоров убрали точки, квадраты и кольца — на фоне они
+      // читались как горошек. Миграция перевыдаёт узор тем подаркам, у которых
+      // он больше не существует.
+      // 8 → 9: у улучшенного подарка появился узор (`pattern`) — тиснение
+      // поверх фона, как в Телеграме. Миграция выдаёт его улучшенным подаркам
+      // старого сохранения и чистит у базовых.
+      // 6 → 7: у подарка появились номер коллекции (`num`) и фон (`bg`).
+      // Миграция выдаёт их улучшенным подаркам старого сохранения и чистит у
+      // базовых, чтобы после обновления коллекция выглядела как в Телеграме.
       // 5 → 6: в 5-м сохранении ещё не было полей `upgradeOnly`,
       // `giftBuyEnabled` и `giftUpgradesEnabled`. Миграция их добавляет, иначе
       // старое сохранение читалось как «апгрейд закрыт», а панель магазина
       // в админке падала на `upgradeOnly.length`.
-      version: 6,
+      version: 10,
       /**
        * Every account owns its own slot (see lib/scopedStorage), so the save
        * of one player can never end up under another account.
@@ -1983,6 +2078,12 @@ export const useGame = create<State>()(
         }
         if (!Array.isArray(state.profile?.altNames)) {
           state.profile = { ...state.profile, altNames: [] };
+        }
+        // книга номеров подарков всегда должна быть объектом: на ней держится
+        // уникальность номеров, и `undefined` в ней превратил бы выдачу номера
+        // в падение
+        if (!state.numberBook || typeof state.numberBook !== "object") {
+          state.numberBook = {};
         }
         // страховка для сохранений, которые пережили миграцию: список
         // «только апгрейд» всегда должен быть массивом, иначе панель магазина
@@ -2072,10 +2173,66 @@ export const useGame = create<State>()(
             ? restAdmin.giftUpgradesEnabled
             : initialState.admin.giftUpgradesEnabled;
 
+        // ── номера, фоны и узоры ───────────────────────────────────────────
+        // В Телеграме номер, фон и узор есть только у улучшенного подарка, у
+        // базового их нет. Сохранения до этой версии о них не знали, поэтому
+        // досоздаём их здесь: номер — из книги номеров коллекции (он больше не
+        // повторится), фон и узор — случайные. Так старая коллекция выглядит
+        // так же, как только что улучшенная.
+        const numberBook: Record<string, number[]> = {};
+        for (const [slug, list] of Object.entries(
+          (s.numberBook ?? {}) as Record<string, unknown>,
+        )) {
+          if (Array.isArray(list)) {
+            numberBook[slug] = list.filter((n): n is number => typeof n === "number");
+          }
+        }
+        const lookedInventory = inventory.map((item) => {
+          const gift = giftOf(item.giftId);
+          // улучшенный подарок — это модель коллекции или то, что пришло из
+          // апгрейда; только у него есть номер и фон
+          const upgraded = gift?.kind === "model" || item.source === "upgrade";
+          if (!upgraded) {
+            // базовый подарок номера, фона и узора не имеет — даже если они
+            // остались от старого сохранения
+            if (
+              item.num === undefined &&
+              item.bg === undefined &&
+              item.pattern === undefined
+            )
+              return item;
+            const plain = { ...item };
+            delete plain.num;
+            delete plain.bg;
+            delete plain.pattern;
+            return plain;
+          }
+          if (
+            typeof item.num === "number" &&
+            backgroundOf(item.bg) &&
+            patternOf(item.pattern)
+          )
+            return item;
+          const taken =
+            typeof item.num === "number"
+              ? null
+              : takeNumber(numberBook, gift ? gift.slug : "custom");
+          if (taken) {
+            for (const [slug, list] of Object.entries(taken.numberBook)) {
+              numberBook[slug] = list;
+            }
+          }
+          // фон и узор могли остаться от старого набора (полоски, цветы) —
+          // таких больше нет, поэтому берём новые
+          const bg = backgroundOf(item.bg) ? item.bg! : rollBackground().id;
+          const pattern = patternOf(item.pattern) ? item.pattern! : rollPattern().id;
+          return { ...item, num: item.num ?? taken?.num, bg, pattern };
+        });
+
         return {
           ...initialState,
           ...s,
-          inventory: inventory.map((i) =>
+          inventory: lookedInventory.map((i) =>
             i.pinned && !cappedPins.has(i.id) ? { ...i, pinned: false } : i,
           ),
           pinOrder,
@@ -2085,6 +2242,7 @@ export const useGame = create<State>()(
           purchases,
           tonOwned: Array.isArray(s.tonOwned) ? s.tonOwned : [],
           tonTaken: {},
+          numberBook,
           skin: s.skin ?? DEFAULT_SKIN,
           profile,
           admin: {
@@ -2110,6 +2268,7 @@ export const useGame = create<State>()(
         premiumPlan: s.premiumPlan,
         purchases: s.purchases,
         tonOwned: s.tonOwned,
+        numberBook: s.numberBook,
         profile: s.profile,
         joinedAt: s.joinedAt,
         lastFreeCaseAt: s.lastFreeCaseAt,

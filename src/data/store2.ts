@@ -288,8 +288,6 @@ function shuffle<T>(list: T[], rnd: () => number): T[] {
   return out;
 }
 
-const pad2 = (n: number) => String(n).padStart(2, "0");
-
 /* ---------------------------------------------------------------- pools */
 
 type UserSeed = { name: string; base: number; tier: TonTier; note: string };
@@ -450,59 +448,73 @@ const WORD_USERS: UserSeed[] = [
   { name: "meteor", base: 5.9, tier: "epic", note: "слово" },
 ];
 
-/** Номера: цена зависит от кода страны. */
-const NUMBER_SEEDS: { code: string; area: string; note: string; base: number; tier: TonTier }[] = [
-  { code: "+375", area: "33", note: "код BY, 33", base: 3.6, tier: "rare" },
-  { code: "+375", area: "29", note: "код BY, 29", base: 3.9, tier: "rare" },
-  { code: "+380", area: "67", note: "код UA, 67", base: 3.8, tier: "rare" },
-  { code: "+380", area: "44", note: "код UA, 44", base: 4.2, tier: "rare" },
-  { code: "+7", area: "701", note: "код KZ, 701", base: 4.8, tier: "rare" },
-  { code: "+7", area: "777", note: "код KZ, 777", base: 5.1, tier: "rare" },
-  { code: "+996", area: "312", note: "код KG, Бишкек", base: 3.4, tier: "rare" },
-  { code: "+998", area: "71", note: "код UZ, Ташкент", base: 3.5, tier: "rare" },
-  { code: "+374", area: "10", note: "код AM, Ереван", base: 3.3, tier: "rare" },
-  { code: "+995", area: "32", note: "код GE, Тбилиси", base: 3.7, tier: "rare" },
-  { code: "+7", area: "999", note: "код RU, 999", base: 5.4, tier: "rare" },
-  { code: "+7", area: "495", note: "код RU, Москва", base: 6.1, tier: "rare" },
-  { code: "+7", area: "812", note: "код RU, Петербург", base: 5.6, tier: "rare" },
-  { code: "+48", area: "22", note: "код PL, Варшава", base: 4.6, tier: "rare" },
-  { code: "+420", area: "2", note: "код CZ, Прага", base: 4.9, tier: "rare" },
-  { code: "+36", area: "1", note: "код HU, Будапешт", base: 4.4, tier: "rare" },
-  { code: "+40", area: "21", note: "код RO, Бухарест", base: 4.1, tier: "rare" },
-  { code: "+359", area: "2", note: "код BG, София", base: 3.9, tier: "rare" },
-  { code: "+30", area: "21", note: "код GR, Афины", base: 5.2, tier: "rare" },
-  { code: "+49", area: "30", note: "код DE, Берлин", base: 6.5, tier: "rare" },
-  { code: "+49", area: "89", note: "код DE, Мюнхен", base: 6.2, tier: "rare" },
-  { code: "+33", area: "1", note: "код FR, Париж", base: 7.6, tier: "rare" },
-  { code: "+34", area: "91", note: "код ES, Мадрид", base: 6.8, tier: "rare" },
-  { code: "+39", area: "6", note: "код IT, Рим", base: 7.2, tier: "rare" },
-  { code: "+31", area: "20", note: "код NL, Амстердам", base: 7.9, tier: "rare" },
-  { code: "+46", area: "8", note: "код SE, Стокгольм", base: 8.1, tier: "epic" },
-  { code: "+47", area: "21", note: "код NO, Осло", base: 8.3, tier: "epic" },
-  { code: "+358", area: "9", note: "код FI, Хельсинки", base: 8.2, tier: "epic" },
-  { code: "+90", area: "212", note: "код TR, Стамбул", base: 7.4, tier: "rare" },
-  { code: "+972", area: "3", note: "код IL, Тель-Авив", base: 9.8, tier: "epic" },
-  { code: "+81", area: "3", note: "код JP, Токио", base: 8.4, tier: "epic" },
-  { code: "+81", area: "6", note: "код JP, Осака", base: 8.2, tier: "epic" },
-  { code: "+82", area: "2", note: "код KR, Сеул", base: 9.2, tier: "epic" },
-  { code: "+86", area: "21", note: "код CN, Шанхай", base: 9.6, tier: "epic" },
-  { code: "+65", area: "6", note: "код SG, Сингапур", base: 12, tier: "epic" },
-  { code: "+852", area: "2", note: "код HK", base: 16, tier: "epic" },
-  { code: "+61", area: "2", note: "код AU, Сидней", base: 10.4, tier: "epic" },
-  { code: "+64", area: "9", note: "код NZ, Окленд", base: 9.9, tier: "epic" },
-  { code: "+55", area: "11", note: "код BR, Сан-Паулу", base: 8.6, tier: "epic" },
-  { code: "+52", area: "55", note: "код MX, Мехико", base: 8.1, tier: "epic" },
-  { code: "+27", area: "11", note: "код ZA, Йоханнесбург", base: 7.2, tier: "rare" },
-  { code: "+1", area: "202", note: "код США, округ Колумбия", base: 9.5, tier: "epic" },
-  { code: "+1", area: "212", note: "код США, Нью-Йорк", base: 11.5, tier: "epic" },
-  { code: "+1", area: "310", note: "код США, Лос-Анджелес", base: 11, tier: "epic" },
-  { code: "+1", area: "415", note: "код США, Сан-Франциско", base: 12.5, tier: "epic" },
-  { code: "+44", area: "20", note: "код UK, Лондон", base: 11, tier: "epic" },
-  { code: "+44", area: "161", note: "код UK, Манчестер", base: 10.2, tier: "epic" },
-  { code: "+41", area: "44", note: "код CH, Цюрих", base: 14.5, tier: "epic" },
-  { code: "+353", area: "1", note: "код IE, Дублин", base: 13, tier: "epic" },
-  { code: "+971", area: "4", note: "код ОАЭ, Дубай", base: 13.5, tier: "epic" },
-  { code: "+888", area: "8", note: "анонимный номер Telegram", base: 250, tier: "mythic" },
+/**
+ * Номера: цена зависит от кода страны.
+ *
+ * `groups` — сколько цифр в каждой группе после кода/оператора. Длины взяты
+ * из реальных форматов: в Беларуси +375 33 XXX-XX-XX, в США +1 212 XXX-XXXX,
+ * у анонимного +888 хвост короткий. Раньше хвост всегда был 4+2+2 цифры — из-за
+ * этого номера выходили неестественно длинными.
+ */
+const NUMBER_SEEDS: {
+  code: string;
+  area: string;
+  note: string;
+  base: number;
+  tier: TonTier;
+  groups: number[];
+}[] = [
+  { code: "+375", area: "33", note: "код BY, 33", base: 3.6, tier: "rare", groups: [3, 2, 2] },
+  { code: "+375", area: "29", note: "код BY, 29", base: 3.9, tier: "rare", groups: [3, 2, 2] },
+  { code: "+380", area: "67", note: "код UA, 67", base: 3.8, tier: "rare", groups: [3, 2, 2] },
+  { code: "+380", area: "44", note: "код UA, 44", base: 4.2, tier: "rare", groups: [3, 2, 2] },
+  { code: "+7", area: "701", note: "код KZ, 701", base: 4.8, tier: "rare", groups: [3, 2, 2] },
+  { code: "+7", area: "777", note: "код KZ, 777", base: 5.1, tier: "rare", groups: [3, 2, 2] },
+  { code: "+996", area: "312", note: "код KG, Бишкек", base: 3.4, tier: "rare", groups: [3, 3] },
+  { code: "+998", area: "71", note: "код UZ, Ташкент", base: 3.5, tier: "rare", groups: [3, 2, 2] },
+  { code: "+374", area: "10", note: "код AM, Ереван", base: 3.3, tier: "rare", groups: [2, 2, 2] },
+  { code: "+995", area: "32", note: "код GE, Тбилиси", base: 3.7, tier: "rare", groups: [3, 2, 2] },
+  { code: "+7", area: "999", note: "код RU, 999", base: 5.4, tier: "rare", groups: [3, 2, 2] },
+  { code: "+7", area: "495", note: "код RU, Москва", base: 6.1, tier: "rare", groups: [3, 2, 2] },
+  { code: "+7", area: "812", note: "код RU, Петербург", base: 5.6, tier: "rare", groups: [3, 2, 2] },
+  { code: "+48", area: "22", note: "код PL, Варшава", base: 4.6, tier: "rare", groups: [3, 2, 2] },
+  { code: "+420", area: "2", note: "код CZ, Прага", base: 4.9, tier: "rare", groups: [3, 3, 3] },
+  { code: "+36", area: "1", note: "код HU, Будапешт", base: 4.4, tier: "rare", groups: [3, 4] },
+  { code: "+40", area: "21", note: "код RO, Бухарест", base: 4.1, tier: "rare", groups: [3, 2, 2] },
+  { code: "+359", area: "2", note: "код BG, София", base: 3.9, tier: "rare", groups: [3, 2, 2] },
+  { code: "+30", area: "21", note: "код GR, Афины", base: 5.2, tier: "rare", groups: [3, 2, 2] },
+  { code: "+49", area: "30", note: "код DE, Берлин", base: 6.5, tier: "rare", groups: [4, 4] },
+  { code: "+49", area: "89", note: "код DE, Мюнхен", base: 6.2, tier: "rare", groups: [4, 4] },
+  { code: "+33", area: "1", note: "код FR, Париж", base: 7.6, tier: "rare", groups: [2, 2, 2, 2] },
+  { code: "+34", area: "91", note: "код ES, Мадрид", base: 6.8, tier: "rare", groups: [3, 2, 2] },
+  { code: "+39", area: "6", note: "код IT, Рим", base: 7.2, tier: "rare", groups: [4, 4] },
+  { code: "+31", area: "20", note: "код NL, Амстердам", base: 7.9, tier: "rare", groups: [3, 4] },
+  { code: "+46", area: "8", note: "код SE, Стокгольм", base: 8.1, tier: "epic", groups: [3, 2, 2] },
+  { code: "+47", area: "21", note: "код NO, Осло", base: 8.3, tier: "epic", groups: [2, 2, 2] },
+  { code: "+358", area: "9", note: "код FI, Хельсинки", base: 8.2, tier: "epic", groups: [3, 4] },
+  { code: "+90", area: "212", note: "код TR, Стамбул", base: 7.4, tier: "rare", groups: [3, 2, 2] },
+  { code: "+972", area: "3", note: "код IL, Тель-Авив", base: 9.8, tier: "epic", groups: [3, 4] },
+  { code: "+81", area: "3", note: "код JP, Токио", base: 8.4, tier: "epic", groups: [4, 4] },
+  { code: "+81", area: "6", note: "код JP, Осака", base: 8.2, tier: "epic", groups: [4, 4] },
+  { code: "+82", area: "2", note: "код KR, Сеул", base: 9.2, tier: "epic", groups: [4, 4] },
+  { code: "+86", area: "21", note: "код CN, Шанхай", base: 9.6, tier: "epic", groups: [4, 4] },
+  { code: "+65", area: "", note: "код SG, Сингапур", base: 12, tier: "epic", groups: [4, 4] },
+  { code: "+852", area: "", note: "код HK", base: 16, tier: "epic", groups: [4, 4] },
+  { code: "+61", area: "2", note: "код AU, Сидней", base: 10.4, tier: "epic", groups: [4, 4] },
+  { code: "+64", area: "9", note: "код NZ, Окленд", base: 9.9, tier: "epic", groups: [3, 4] },
+  { code: "+55", area: "11", note: "код BR, Сан-Паулу", base: 8.6, tier: "epic", groups: [4, 4] },
+  { code: "+52", area: "55", note: "код MX, Мехико", base: 8.1, tier: "epic", groups: [4, 4] },
+  { code: "+27", area: "11", note: "код ZA, Йоханнесбург", base: 7.2, tier: "rare", groups: [3, 4] },
+  { code: "+1", area: "202", note: "код США, округ Колумбия", base: 9.5, tier: "epic", groups: [3, 4] },
+  { code: "+1", area: "212", note: "код США, Нью-Йорк", base: 11.5, tier: "epic", groups: [3, 4] },
+  { code: "+1", area: "310", note: "код США, Лос-Анджелес", base: 11, tier: "epic", groups: [3, 4] },
+  { code: "+1", area: "415", note: "код США, Сан-Франциско", base: 12.5, tier: "epic", groups: [3, 4] },
+  { code: "+44", area: "20", note: "код UK, Лондон", base: 11, tier: "epic", groups: [4, 4] },
+  { code: "+44", area: "161", note: "код UK, Манчестер", base: 10.2, tier: "epic", groups: [3, 4] },
+  { code: "+41", area: "44", note: "код CH, Цюрих", base: 14.5, tier: "epic", groups: [3, 2, 2] },
+  { code: "+353", area: "1", note: "код IE, Дублин", base: 13, tier: "epic", groups: [3, 4] },
+  { code: "+971", area: "4", note: "код ОАЭ, Дубай", base: 13.5, tier: "epic", groups: [3, 4] },
+  { code: "+888", area: "", note: "анонимный номер Telegram", base: 250, tier: "mythic", groups: [4, 4] },
 ];
 
 /** Хвосты, которые делают лот «новым» в следующий час. */
@@ -537,20 +549,29 @@ function usernameLots(rnd: () => number): TonItem[] {
   return out;
 }
 
+/** Случайное число из `n` цифр без ведущего нуля — как настоящая группа номера. */
+function groupDigits(n: number, rnd: () => number): string {
+  let s = String(1 + Math.floor(rnd() * 9));
+  for (let i = 1; i < n; i++) s += String(Math.floor(rnd() * 10));
+  return s;
+}
+
 function numberLots(rnd: () => number): TonItem[] {
   const out: TonItem[] = [];
   const used = new Set<string>();
   // пул кодов меньше, чем лотов: часть кодов повторяется с другими цифрами,
   // поэтому id собираем по самим цифрам и повторы пропускаем
   const pool = shuffle(NUMBER_SEEDS, rnd);
-  for (let i = 0; out.length < TON_NUMBER_LOTS && i < pool.length * 3; i++) {
+  for (let i = 0; out.length < TON_NUMBER_LOTS && i < pool.length * 4; i++) {
     const seed = pool[i % pool.length];
-    // анонимные +888 почти всегда на прилавке — их мало и они дорогие
-    const middle = seed.tier === "mythic" ? 800 + Math.floor(rnd() * 200) : 500 + Math.floor(rnd() * 100);
-    const label = `${seed.code} ${seed.area} ${middle} ${pad2(Math.floor(rnd() * 100))} ${pad2(
-      Math.floor(rnd() * 100),
-    )}`;
+    // хвост собираем по реальным группам цифр: +375 33 512-47-89,
+    // +1 212 555-0123, +888 1234-5678 — коротко и как в жизни
+    const tail = seed.groups.map((n) => groupDigits(n, rnd)).join("-");
+    const head = seed.area ? `${seed.code} ${seed.area}` : seed.code;
+    const label = `${head} ${tail}`;
     const digits = label.replace(/\D/g, "");
+    // анонимные +888 — самые дорогие: цена гуляет от лота к лоту
+    const ton = seed.tier === "mythic" ? seed.base + Math.floor(rnd() * 4) * 40 : seed.base;
     if (used.has(digits)) continue;
     used.add(digits);
     out.push({
@@ -558,7 +579,7 @@ function numberLots(rnd: () => number): TonItem[] {
       kind: "number",
       label,
       note: seed.note,
-      ton: seed.tier === "mythic" ? seed.base + Math.floor(rnd() * 4) * 40 : seed.base,
+      ton,
       tier: seed.tier,
     });
   }

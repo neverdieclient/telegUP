@@ -157,8 +157,7 @@ export default function UpgradePage() {
   const [angle, setAngle] = useState(-90);
   const [pickerOpen, setPickerOpen] = useState<"source" | "target" | null>(null);
 
-  /** Target-picker filters: rarity, price band and a free-text search. */
-  const [pickRarity, setPickRarity] = useState<"all" | "common" | "rare" | "epic" | "legendary" | "mythic">("all");
+  /** Target-picker filters: price band and a free-text search. */
   const [pickBand, setPickBand] = useState<"all" | "small" | "mid" | "big" | "huge">("all");
   const [pickQuery, setPickQuery] = useState("");
 
@@ -222,11 +221,10 @@ export default function UpgradePage() {
     const band = BANDS.find((b) => b.id === pickBand)!;
     return [...GIFTS]
       .filter((g) => (source ? g.stars > source.stars : true))
-      .filter((g) => (pickRarity === "all" ? true : g.rarity === pickRarity))
       .filter((g) => g.stars >= band.min && g.stars <= band.max)
       .filter((g) => (q ? `${g.name} ${g.variant}`.toLowerCase().includes(q) : true))
       .sort((a, b) => a.stars - b.stars);
-  }, [source, pickRarity, pickBand, pickQuery]);
+  }, [source, pickBand, pickQuery]);
 
   const doUpgrade = () => {
     if (!sourceItem || !target || !source) return;
@@ -567,23 +565,6 @@ export default function UpgradePage() {
                           }`}
                         >
                           {b.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-                      {(["all", "common", "rare", "epic", "legendary", "mythic"] as const).map((r) => (
-                        <button
-                          key={r}
-                          onClick={() => setPickRarity(r)}
-                          className={`shrink-0 rounded-lg px-2.5 py-1 text-[10.5px] font-bold transition-colors ${
-                            pickRarity === r
-                              ? "bg-white/12 text-white"
-                              : r === "all"
-                                ? "text-white/35 hover:bg-white/5"
-                                : `${RARITY_META[r].text} opacity-60 hover:opacity-100`
-                          }`}
-                        >
-                          {r === "all" ? "Вся редкость" : RARITY_META[r].label}
                         </button>
                       ))}
                     </div>

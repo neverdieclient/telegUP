@@ -1,21 +1,40 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { RARITY_META, RARITY_ORDER, type Rarity } from "../data/gifts";
+import { RARITY_META } from "../data/gifts";
+import { backgroundCss, backgroundOf } from "../data/backgrounds";
+import { patternLayer, patternOf } from "../data/patterns";
+import { fmtGiftNumber } from "../lib/giftNumbers";
+import { UPGRADE_STARS } from "../lib/pricing";
 import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
-import { guaranteePrice, pinCap, useGame } from "../store/useGame";
+import { pinCap, useGame } from "../store/useGame";
 import { useGiftInbox } from "../lib/useGiftInbox";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
-import { modelTargets } from "../lib/rng";
 import { SPRING_SNAPPY, SPRING_SOFT } from "../lib/motion";
 import { sendGift, searchPlayers, type PlayerRow } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 import { Avatar } from "../components/profile/Cosmetics";
 
-type Filter = "all" | Rarity;
 type Sort = "new" | "value" | "name";
+
+/**
+ * Подложка подарка: однотонный «тканевой» цвет, а поверх — узор, как в
+ * Телеграме. Узор — отдельный слой картинки, поэтому оба слоя живут в одном
+ * `background-image`: фон снизу, тиснение сверху. У базового подарка узора нет,
+ * и остаётся только градиент.
+ */
+function lookStyle(
+  bg: string | null | undefined,
+  pattern: string | null | undefined,
+  tint: string,
+  size = 14,
+): CSSProperties {
+  const base = backgroundCss(bg, tint);
+  const layer = patternLayer(pattern, { size });
+  return { backgroundImage: layer ? `${layer}, ${base}` : base };
+}
 
 /** Telegram-style pin, used on the cards and the pinned strip. */
 function PinIcon({ className = "size-3.5" }: { className?: string }) {
@@ -68,7 +87,6 @@ export default function Inventory() {
   const profile = useGame((s) => s.profile);
   const setMainNumber = useGame((s) => s.setMainNumber);
 
-  const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("new");
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
@@ -96,30 +114,20 @@ export default function Inventory() {
   }, [giftOpen, giftQuery, onlineUserId]);
 
   const list = useMemo(() => {
-    let out = inventory.filter((i) => GIFT_BY_ID[i.giftId]);
-    if (filter !== "all") out = out.filter((i) => GIFT_BY_ID[i.giftId].rarity === filter);
-    out = [...out].sort((a, b) => {
+    const out = inventory.filter((i) => GIFT_BY_ID[i.giftId]);
+    const sorted = [...out].sort((a, b) => {
       if (sort === "new") return b.acquiredAt - a.acquiredAt;
       if (sort === "value") return GIFT_BY_ID[b.giftId].stars - GIFT_BY_ID[a.giftId].stars;
       return GIFT_BY_ID[a.giftId].variant.localeCompare(GIFT_BY_ID[b.giftId].variant);
     });
     // pinned gifts float above the rest, like Telegram's pinned gifts
-    return [...out].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
-  }, [inventory, filter, sort]);
+    return [...sorted].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
+  }, [inventory, sort]);
 
   const totalValue = useMemo(
     () => inventory.reduce((acc, i) => acc + (GIFT_BY_ID[i.giftId]?.stars ?? 0), 0),
     [inventory],
   );
-
-  const counts = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const i of inventory) {
-      const r = GIFT_BY_ID[i.giftId]?.rarity;
-      if (r) map[r] = (map[r] ?? 0) + 1;
-    }
-    return map;
-  }, [inventory]);
 
   const active = selected ? inventory.find((i) => i.id === selected) ?? null : null;
   const activeGift = active ? GIFT_BY_ID[active.giftId] ?? null : null;
@@ -293,28 +301,18 @@ export default function Inventory() {
     movePin(id, back ? -1 : 1);
   };
 
-  /** Every nicer model of the selected gift, cheapest first — owner-made
-   *  models included, so a freshly imported folder works right away. */
-  const targets = useMemo(
-    () => (activeGift ? modelTargets(activeGift, allGifts) : []),
-    [activeGift, allGifts],
-  );
-
-  /** cheapest and priciest affordable guaranteed drops, for the «цена» hint */
-  const guaranteeRange = useMemo(() => {
-    if (!activeGift) return { cheapest: 0, reach: 0 };
-    const costs = targets
-      .filter((t) => t.stars > activeGift.stars)
-      .map((t) => guaranteePrice(t.stars - activeGift.stars));
-    if (!costs.length) return { cheapest: 0, reach: 0 };
-    const cheapest = Math.min(...costs);
-    const reach = costs.filter((c) => c <= stars).reduce((max, c) => Math.max(max, c), 0);
-    return { cheapest, reach };
-  }, [activeGift, targets, stars]);
+  /** Вся коллекция, кроме текущей модели: выпадает любая, шансы одинаковые. */
+  const rollModels = useMemo(() => {
+    if (!activeGift) return [];
+    return allGifts.filter(
+      (g) => g.slug === activeGift.slug && g.kind === "model" && g.id !== activeGift.id,
+    );
+  }, [activeGift, allGifts]);
 
   /**
-   * 100%-успешный апгрейд: модель всегда улучшается, но какая именно —
-   * решает RNG. Платим только разницу в цене той модели, что выпала.
+   * Апгрейд модели: провала нет, какая именно модель выпадет — чистый случай
+   * (может быть и топовая, и самая дешёвая, и дешевле текущей). Цена всегда
+   * одна — 15★. Вместе с моделью подарок получает номер коллекции и фон.
    */
   const doGuaranteedUpgrade = () => {
     if (!active) return;
@@ -323,8 +321,8 @@ export default function Inventory() {
       const got = res.targetGiftId ? GIFT_BY_ID[res.targetGiftId] ?? null : null;
       toast({
         kind: "success",
-        title: got ? `${got.name}: ${got.variant}` : "Модель улучшена",
-        message: `Выпала случайная модель · −${(res.cost ?? 0).toLocaleString("ru-RU")} ★`,
+        title: got ? `${got.name}: ${got.variant}` : "Модель выпала",
+        message: `Случайная модель коллекции · −${(res.cost ?? UPGRADE_STARS).toLocaleString("ru-RU")} ★`,
       });
       setModelOpen(false);
       setSelected(null);
@@ -333,13 +331,21 @@ export default function Inventory() {
     if (res.reason === "stars") {
       toast({
         kind: "info",
-        title: `Нужно ${(res.cost ?? 0).toLocaleString("ru-RU")} ★`,
-        message: `У тебя ${stars.toLocaleString("ru-RU")} ★ · самая дешёвая модель стоит ${(res.cost ?? 0).toLocaleString("ru-RU")} ★`,
+        title: `Нужно ${UPGRADE_STARS} ★`,
+        message: `У тебя ${stars.toLocaleString("ru-RU")} ★ · апгрейд стоит ${UPGRADE_STARS} ★`,
       });
       return;
     }
     if (res.reason === "top") {
-      toast({ kind: "info", title: "Это топ-модель", message: "Выше уже некуда" });
+      toast({ kind: "info", title: "Нет других моделей", message: "В этой коллекции всего одна модель" });
+      return;
+    }
+    if (res.reason === "model") {
+      toast({
+        kind: "info",
+        title: "Уже улучшен",
+        message: "Улучшать можно только базовый подарок — этот уже с моделью",
+      });
       return;
     }
     if (res.reason === "disabled") {
@@ -541,7 +547,7 @@ export default function Inventory() {
                     }
                     pinKeyMove(e, item.id);
                   }}
-                  style={{ touchAction: "none" }}
+                  style={{ touchAction: "none", ...lookStyle(item.bg, item.pattern, gift.tint, 10) }}
                   className={[
                     "group relative flex cursor-grab select-none items-center gap-2 overflow-hidden rounded-2xl border bg-black/30 p-2 text-left active:cursor-grabbing",
                     meta.ring,
@@ -561,7 +567,14 @@ export default function Inventory() {
 
                   <GiftArt gift={gift} size={40} rounded="rounded-xl" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate pr-2 text-[11.5px] font-extrabold">{gift.name}</p>
+                    <p className="truncate pr-2 text-[11.5px] font-extrabold">
+                      {gift.name}
+                      {typeof item.num === "number" && (
+                        <span className="ml-1 text-[9.5px] font-bold tabular-nums text-white/35">
+                          {fmtGiftNumber(item.num)}
+                        </span>
+                      )}
+                    </p>
                     <p className="flex items-center gap-0.5 text-[11px] font-bold tabular-nums text-neon/90">
                       {gift.stars.toLocaleString("ru-RU")}
                       <StarIcon className="size-2.5" />
@@ -624,25 +637,10 @@ export default function Inventory() {
         )}
 
       {/* filters */}
-      <div className="flex flex-col gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-          {(["all", ...RARITY_ORDER] as Filter[]).map((f) => {
-            const label = f === "all" ? "Все" : RARITY_META[f].label;
-            const count = f === "all" ? inventory.length : counts[f] ?? 0;
-            if (f !== "all" && !count) return null;
-            return (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`shrink-0 rounded-xl px-2.5 py-1.5 text-[11.5px] font-bold transition-colors ${
-                  filter === f ? "bg-white/10 text-white" : "text-white/40 hover:bg-white/5 hover:text-white/75"
-                }`}
-              >
-                {label} <span className="text-white/25">{count}</span>
-              </button>
-            );
-          })}
-        </div>
+      <div className="flex items-center justify-between gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] p-3">
+        <p className="shrink-0 text-[11.5px] font-bold text-white/35">
+          {inventory.length} {inventory.length === 1 ? "подарок" : "подарков"}
+        </p>
         <div className="flex gap-1.5">
           {(
             [
@@ -685,6 +683,9 @@ export default function Inventory() {
           {list.map((item, i) => {
             const gift = GIFT_BY_ID[item.giftId];
             const meta = RARITY_META[gift.rarity];
+            // улучшенный подарок: чип «обычный» исчезает, а вместо него —
+            // случайный фон и номер коллекции, как в Телеграме
+            const upgraded = Boolean(item.bg) || typeof item.num === "number";
             return (
               <motion.button
                 key={item.id}
@@ -696,12 +697,19 @@ export default function Inventory() {
               >
                 <div
                   className="relative grid h-[108px] place-items-center overflow-hidden"
-                  style={{ background: `radial-gradient(120% 105% at 50% 5%, ${gift.tint}2e, #0e0e12 72%)` }}
+                  style={lookStyle(item.bg, item.pattern, gift.tint)}
                 >
                   <GiftArt gift={gift} size={70} rounded="rounded-xl" />
-                  <span className={`absolute left-2 top-2 rounded-md border px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wider ${meta.chip}`}>
-                    {meta.label}
-                  </span>
+                  {!upgraded && (
+                    <span className={`absolute left-2 top-2 rounded-md border px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wider ${meta.chip}`}>
+                      {meta.label}
+                    </span>
+                  )}
+                  {typeof item.num === "number" && (
+                    <span className="absolute bottom-2 left-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-white/70 backdrop-blur">
+                      {fmtGiftNumber(item.num)}
+                    </span>
+                  )}
                   <span className="absolute right-2 top-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[8.5px] font-bold text-white/45 backdrop-blur">
                     {SOURCE_LABEL[item.source] ?? item.source}
                   </span>
@@ -766,7 +774,7 @@ export default function Inventory() {
             >
               <div
                 className="relative grid h-44 place-items-center"
-                style={{ background: `radial-gradient(120% 100% at 50% 0%, ${activeGift.tint}33, #0c0c0f 72%)` }}
+                style={lookStyle(active.bg, active.pattern, activeGift.tint, 18)}
               >
                 <GiftArt gift={activeGift} size={104} rounded="rounded-2xl" />
                 <button
@@ -779,12 +787,23 @@ export default function Inventory() {
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="truncate text-[18px] font-extrabold tracking-tight">{activeGift.name}</h3>
+                    <h3 className="truncate text-[18px] font-extrabold tracking-tight">
+                      {activeGift.name}
+                      {typeof active.num === "number" && (
+                        <span className="ml-1.5 align-middle text-[13px] font-bold tabular-nums text-white/40">
+                          {fmtGiftNumber(active.num)}
+                        </span>
+                      )}
+                    </h3>
                     <p className="truncate text-[12px] text-white/40">
                       {activeGift.variant === "Gift" ? "коллекционный подарок" : activeGift.variant}
                     </p>
                   </div>
-                  <RarityChip rarity={activeGift.rarity} />
+                  {/* чип «обычный» есть только у базового подарка: у улучшенного
+                      вместо него номер и фон, как в Телеграме */}
+                  {Boolean(active.bg) || typeof active.num === "number" ? null : (
+                    <RarityChip rarity={activeGift.rarity} />
+                  )}
                 </div>
 
                 <div className="mt-3 grid grid-cols-3 gap-2">
@@ -799,6 +818,21 @@ export default function Inventory() {
                     </div>
                   ))}
                 </div>
+
+                {/* у улучшенного подарка, как в Телеграме, видно, что ему
+                    досталось: название фона и узора */}
+                {backgroundOf(active.bg) && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="rounded-lg bg-white/[0.055] px-2 py-1 text-[10px] font-bold text-white/40">
+                      фон · {backgroundOf(active.bg)!.name}
+                    </span>
+                    {patternOf(active.pattern) && (
+                      <span className="rounded-lg bg-white/[0.055] px-2 py-1 text-[10px] font-bold text-white/40">
+                        узор · {patternOf(active.pattern)!.glyph} {patternOf(active.pattern)!.name}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <p className="mt-3 line-clamp-3 text-[11px] leading-relaxed text-white/30">{activeGift.desc}</p>
 
@@ -829,7 +863,13 @@ export default function Inventory() {
                   <p className="mt-2 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-center text-[10.5px] text-white/30">
                     улучшение моделей временно закрыто
                   </p>
-                ) : targets.length > 0 ? (
+                ) : activeGift.kind !== "gift" ? (
+                  // улучшать можно только базовый подарок: то, что уже с моделью,
+                  // — финальная вещь, второй раз её не трогаем
+                  <p className="mt-2 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-center text-[10.5px] text-white/30">
+                    этот подарок уже улучшен — второй раз нельзя
+                  </p>
+                ) : rollModels.length > 0 ? (
                   <Button
                     full
                     variant="violet"
@@ -837,11 +877,11 @@ export default function Inventory() {
                     onClick={() => setModelOpen(true)}
                     disabled={modelOpen}
                   >
-                    🎲 Улучшить модель · гарантированно
+                    🎲 Улучшить модель · {UPGRADE_STARS} ★
                   </Button>
                 ) : (
                   <p className="mt-2 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-center text-[10.5px] text-white/30">
-                    это топ-модель — выше некуда
+                    в этой коллекции всего одна модель
                   </p>
                 )}
 
@@ -851,7 +891,7 @@ export default function Inventory() {
                   </Button>
                 </Link>
 
-                {modelOpen && targets.length > 0 && (
+                {modelOpen && rollModels.length > 0 && (
                   <motion.div
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -871,9 +911,12 @@ export default function Inventory() {
                     </div>
 
                     <p className="mt-1.5 text-[10.5px] leading-relaxed text-white/45">
-                      Модель улучшается <span className="font-bold text-white/70">всегда</span> — провала
-                      нет, предмет не сгорает. А вот какая именно выпадет, решает случай: близкие
-                      варианты выпадают чаще, дорогие реже. Выбрать конкретную нельзя.
+                      Провала нет — предмет не сгорает. Выпадает{" "}
+                      <span className="font-bold text-white/70">любая</span> модель коллекции: хоть
+                      топовая, хоть самая дешёвая, шансы у всех одинаковые. Выбрать
+                      конкретную нельзя. Вместе с моделью подарок получает{" "}
+                      <span className="font-bold text-white/70">номер</span> коллекции и{" "}
+                      <span className="font-bold text-white/70">фон</span> — как в Телеграме.
                     </p>
 
                     <div className="mt-2 flex items-center justify-between rounded-xl border border-white/8 bg-black/30 px-3 py-2">
@@ -882,18 +925,13 @@ export default function Inventory() {
                           {activeGift.name} · {activeGift.variant}
                         </p>
                         <p className="text-[9.5px] tabular-nums text-white/35">
-                          сейчас {activeGift.stars.toLocaleString("ru-RU")} ★ · выше есть{" "}
-                          {targets.length}
+                          сейчас {activeGift.stars.toLocaleString("ru-RU")} ★ · моделей в коллекции{" "}
+                          {rollModels.length}
                         </p>
                       </div>
-                      <p className="shrink-0 text-[15px] font-black tabular-nums text-neon">100%</p>
-                    </div>
-
-                    <div className="mt-2 flex items-center justify-between text-[10px] text-white/35">
-                      <span>цена — разница до выпавшей модели</span>
-                      <span className="tabular-nums">
-                        от {guaranteeRange.cheapest.toLocaleString("ru-RU")} ★
-                      </span>
+                      <p className="shrink-0 text-[15px] font-black tabular-nums text-neon">
+                        {UPGRADE_STARS} ★
+                      </p>
                     </div>
 
                     <Button
@@ -901,19 +939,15 @@ export default function Inventory() {
                       className="mt-2"
                       size="sm"
                       onClick={doGuaranteedUpgrade}
-                      disabled={guaranteeRange.cheapest <= 0}
+                      disabled={stars < UPGRADE_STARS}
                     >
-                      🎲 Улучшить · случайная модель
+                      🎲 Улучшить · {UPGRADE_STARS} ★
                     </Button>
 
                     <p className="mt-1.5 text-center text-[9.5px] leading-relaxed text-white/25">
-                      {guaranteeRange.reach > 0
-                        ? `Выпадет одна из тех, что по карману: до ${guaranteeRange.reach.toLocaleString(
-                            "ru-RU",
-                          )} ★. Баланс ${stars.toLocaleString("ru-RU")} ★.`
-                        : `Не хватает даже на ближайшую модель — нужно ${guaranteeRange.cheapest.toLocaleString(
-                            "ru-RU",
-                          )} ★.`}
+                      {stars >= UPGRADE_STARS
+                        ? `Случайная модель + номер + фон. Баланс ${stars.toLocaleString("ru-RU")} ★.`
+                        : `Нужно ${UPGRADE_STARS} ★ — у тебя ${stars.toLocaleString("ru-RU")} ★.`}
                     </p>
                   </motion.div>
                 )}

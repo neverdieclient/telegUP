@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useGame } from "../store/useGame";
-import { RARITY_META, DISCLAIMER, SHOP_USERNAMES } from "../data/gifts";
+import { DISCLAIMER, SHOP_USERNAMES } from "../data/gifts";
 import { useGiftIndex } from "../lib/useCatalog";
 import { CheckMark } from "../components/ui/CheckMark";
 import { StarIcon, GiftArt } from "../components/gifts/GiftArt";
@@ -17,8 +17,6 @@ import {
   PinnedStrip,
   useMyPinnedGifts,
 } from "../components/profile/Cosmetics";
-
-const RARITY_ROWS = ["mythic", "legendary", "epic", "rare", "common"] as const;
 
 export default function ProfilePage() {
   const profile = useGame((s) => s.profile);
@@ -63,14 +61,14 @@ export default function ProfilePage() {
     [inventory],
   );
 
-  const byRarity = useMemo(() => {
-    const acc: Record<string, number> = {};
-    for (const i of inventory) {
-      const g = GIFT_BY_ID[i.giftId];
-      if (g) acc[g.rarity] = (acc[g.rarity] ?? 0) + 1;
-    }
-    return acc;
-  }, [inventory]);
+  /** сколько подарков уже улучшено — у них есть номер, фон и узор */
+  const upgradedCount = useMemo(
+    () =>
+      inventory.filter(
+        (i) => typeof i.num === "number" || Boolean(i.bg) || Boolean(i.pattern),
+      ).length,
+    [inventory],
+  );
 
   const best = useMemo(
     () =>
@@ -653,21 +651,23 @@ export default function ProfilePage() {
       </div>
 
       <section className="rounded-3xl border border-white/8 bg-white/[0.025] p-4">
-        <h3 className="mb-3 text-[13px] font-extrabold tracking-tight">Коллекция по редкости</h3>
+        <h3 className="mb-3 text-[13px] font-extrabold tracking-tight">Коллекция</h3>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {RARITY_ROWS.map((r) => {
-            const meta = RARITY_META[r];
-            return (
-              <div key={r} className="flex items-center justify-between rounded-2xl border border-white/8 bg-black/30 px-3 py-2">
-                <span className="text-[11.5px] font-bold" style={{ color: meta.hex }}>
-                  {meta.label}
-                </span>
-                <span className="text-[12px] font-extrabold tabular-nums text-white/70">
-                  {byRarity[r] ?? 0}
-                </span>
-              </div>
-            );
-          })}
+          {(
+            [
+              ["подарков", inventory.length.toLocaleString("ru-RU")],
+              ["улучшено", upgradedCount.toLocaleString("ru-RU")],
+              ["стоимость", `${value.toLocaleString("ru-RU")} ★`],
+            ] as [string, string][]
+          ).map(([label, v]) => (
+            <div
+              key={label}
+              className="flex items-center justify-between rounded-2xl border border-white/8 bg-black/30 px-3 py-2"
+            >
+              <span className="text-[11.5px] font-bold text-white/45">{label}</span>
+              <span className="text-[12px] font-extrabold tabular-nums text-white/70">{v}</span>
+            </div>
+          ))}
         </div>
 
         {best.length > 0 && (
@@ -677,7 +677,7 @@ export default function ProfilePage() {
               {best.map((g) => (
                 <div
                   key={g.id}
-                  className={`flex flex-col items-center rounded-2xl border bg-black/25 px-2 py-1.5 ${RARITY_META[g.rarity].ring}`}
+                  className="flex flex-col items-center rounded-2xl border border-white/8 bg-black/25 px-2 py-1.5"
                 >
                   <GiftArt gift={g} size={44} rounded="rounded-lg" />
                   <p className="mt-1 w-[64px] truncate text-center text-[9px] font-bold text-white/55">

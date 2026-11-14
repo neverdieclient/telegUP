@@ -29,13 +29,17 @@ function useCountdown(readyAt: () => number) {
   return readyAt();
 }
 
-/** Pie-style odds bar. */
+/** Pie-style odds bar. Все тиры одного цвета — сегменты различаются яркостью. */
 function OddsBar({ odds }: { odds: Case["odds"] }) {
   const entries = (Object.entries(odds) as [keyof typeof odds, number][]).filter(([, v]) => v > 0);
   return (
     <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-white/5">
-      {entries.map(([r, v]) => (
-        <span key={r} className={`h-full ${RARITY_META[r].text.replace("text-", "bg-")}`} style={{ width: `${v * 100}%` }} />
+      {entries.map(([r, v], i) => (
+        <span
+          key={r}
+          className="h-full bg-common"
+          style={{ width: `${v * 100}%`, opacity: Math.max(0.25, 1 - i * 0.16) }}
+        />
       ))}
     </div>
   );

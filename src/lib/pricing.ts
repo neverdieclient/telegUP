@@ -28,3 +28,22 @@ export function discountTon(ton: number, discount = 0): number {
 
 /** True when the owner has a discount running, for the «−N%» badges. */
 export const hasDiscount = (discount: number) => clamp(discount) > 0;
+
+/**
+ * Апгрейд модели: фиксированные 15★.
+ *
+ * Раньше цена считалась от разницы в стоимости выпавшей модели — и игрок
+ * платил то 10★, то 40 000★ за один и тот же бросок. Теперь цена одна и та
+ * же для любой коллекции: 15★ за попытку, как в Телеграме. Функции оставлены
+ * с прежней сигнатурой, чтобы вызывающий код не пришлось переписывать.
+ */
+export const UPGRADE_STARS = 15;
+
+/** @deprecated цена больше не зависит от разницы — см. `UPGRADE_STARS`. */
+export const GUARANTEE_FEE = 1.1;
+/** @deprecated цена больше не зависит от разницы — см. `UPGRADE_STARS`. */
+export const GUARANTEE_MIN = UPGRADE_STARS;
+
+export const guaranteePrice = (_gap: number) => UPGRADE_STARS;
+
+export const guaranteeCost = (_fromStars: number, _toStars: number) => UPGRADE_STARS;

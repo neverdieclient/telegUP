@@ -179,12 +179,20 @@ function markRarity(pct: number): Rarity {
   return rarityFromShare(pct);
 }
 
+/**
+ * В игре осталась одна видимая редкость — «обычный».
+ *
+ * Деления на редкий/эпический/легендарный/мифический больше нет: цветные
+ * чипы и жёлтые/фиолетовые подложки выдавали «дорогой» подарок ещё до того,
+ * как игрок открыл карточку. Внутри данные о редкости остались (на них
+ * держатся веса кейсов), но наружу выходит один нейтральный серый тир.
+ */
 export const RARITY_TINT: Record<Rarity, string> = {
   common: "#9aa3ad",
-  rare: "#3b9dff",
-  epic: "#b45cff",
-  legendary: "#ffcc33",
-  mythic: "#ff3d6e",
+  rare: "#9aa3ad",
+  epic: "#9aa3ad",
+  legendary: "#9aa3ad",
+  mythic: "#9aa3ad",
 };
 
 const GIFTS_ACC: Gift[] = [];
@@ -282,6 +290,7 @@ export const RARITY_META: Record<
     hex: string;
   }
 > = {
+  // Один вид на все тиры: чип «ОБЫЧНЫЙ», серая рамка, серая подложка.
   common: {
     label: "Обычный",
     text: "text-common",
@@ -292,40 +301,40 @@ export const RARITY_META: Record<
     hex: "#9aa3ad",
   },
   rare: {
-    label: "Редкий",
-    text: "text-rare",
-    ring: "border-rare/35",
-    gradient: "bg-gradient-to-br from-rare/10 via-transparent to-transparent",
-    chip: "border-rare/40 bg-rare/10 text-rare",
-    glow: "shadow-[0_0_34px_-8px_rgba(59,157,255,0.6)]",
-    hex: "#3b9dff",
+    label: "Обычный",
+    text: "text-common",
+    ring: "border-common/30",
+    gradient: "bg-gradient-to-br from-common/10 via-transparent to-transparent",
+    chip: "border-common/40 bg-common/10 text-common",
+    glow: "shadow-[0_0_30px_-8px_rgba(154,163,173,0.55)]",
+    hex: "#9aa3ad",
   },
   epic: {
-    label: "Эпический",
-    text: "text-epic",
-    ring: "border-epic/40",
-    gradient: "bg-gradient-to-br from-epic/12 via-transparent to-transparent",
-    chip: "border-epic/40 bg-epic/10 text-epic",
-    glow: "shadow-[0_0_38px_-8px_rgba(180,92,255,0.65)]",
-    hex: "#b45cff",
+    label: "Обычный",
+    text: "text-common",
+    ring: "border-common/30",
+    gradient: "bg-gradient-to-br from-common/10 via-transparent to-transparent",
+    chip: "border-common/40 bg-common/10 text-common",
+    glow: "shadow-[0_0_30px_-8px_rgba(154,163,173,0.55)]",
+    hex: "#9aa3ad",
   },
   legendary: {
-    label: "Легендарный",
-    text: "text-legendary",
-    ring: "border-legendary/40",
-    gradient: "bg-gradient-to-br from-legendary/12 via-transparent to-transparent",
-    chip: "border-legendary/40 bg-legendary/10 text-legendary",
-    glow: "shadow-[0_0_42px_-6px_rgba(255,204,51,0.7)]",
-    hex: "#ffcc33",
+    label: "Обычный",
+    text: "text-common",
+    ring: "border-common/30",
+    gradient: "bg-gradient-to-br from-common/10 via-transparent to-transparent",
+    chip: "border-common/40 bg-common/10 text-common",
+    glow: "shadow-[0_0_30px_-8px_rgba(154,163,173,0.55)]",
+    hex: "#9aa3ad",
   },
   mythic: {
-    label: "Мифический",
-    text: "text-mythic",
-    ring: "border-mythic/45",
-    gradient: "bg-gradient-to-br from-mythic/14 via-transparent to-transparent",
-    chip: "border-mythic/45 bg-mythic/12 text-mythic",
-    glow: "shadow-[0_0_46px_-6px_rgba(255,61,110,0.75)]",
-    hex: "#ff3d6e",
+    label: "Обычный",
+    text: "text-common",
+    ring: "border-common/30",
+    gradient: "bg-gradient-to-br from-common/10 via-transparent to-transparent",
+    chip: "border-common/40 bg-common/10 text-common",
+    glow: "shadow-[0_0_30px_-8px_rgba(154,163,173,0.55)]",
+    hex: "#9aa3ad",
   },
 };
 

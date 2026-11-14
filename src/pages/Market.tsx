@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useRef, useState, useEffect } from "react";
-import { RARITY_META, RARITY_ORDER, SHOP_ITEMS, type Gift, type Rarity } from "../data/gifts";
+import { RARITY_META, SHOP_ITEMS, type Gift } from "../data/gifts";
 import { isPurchasable, loadCustomGifts } from "../data/customGifts";
 import { modelOptions } from "../lib/rng";
 import { useAllGifts, useCustomGiftRows } from "../lib/useCatalog";
@@ -13,13 +13,6 @@ import { useBoost } from "../lib/starBoost";
 import { canBuyGift, useGame } from "../store/useGame";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
-
-type Filter = "all" | Rarity;
-
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "all", label: "Все" },
-  ...RARITY_ORDER.map((r) => ({ id: r as Filter, label: RARITY_META[r].label })),
-];
 
 const TABS = [
   { id: "gift", label: "Подарки" },
@@ -202,7 +195,6 @@ export default function Market() {
     lotInbox.flush();
   }, [lotsClosedAt, lotInbox]);
 
-  const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<"price" | "priceDesc" | "name">("price");
   const [busy, setBusy] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("gift");
@@ -211,13 +203,12 @@ export default function Market() {
 
   const list = useMemo(() => {
     let out = GIFTS.filter((g) => g.kind === tab);
-    if (filter !== "all") out = out.filter((g) => g.rarity === filter);
     if (collection !== "all") out = out.filter((g) => g.slug === collection);
     out = [...out].sort((a, b) =>
       sort === "price" ? a.stars - b.stars : sort === "priceDesc" ? b.stars - a.stars : a.variant.localeCompare(b.variant),
     );
     return out;
-  }, [filter, sort, tab, collection]);
+  }, [sort, tab, collection]);
 
   const collections = useMemo(() => {
     const slugs = new Set(GIFTS.filter((g) => g.kind === tab).map((g) => g.slug));
@@ -330,20 +321,7 @@ export default function Market() {
         ))}
       </div>
 
-      <div className={tab === "auction" ? "hidden" : "flex flex-col gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] p-3 sm:flex-row sm:items-center sm:justify-between"}>
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setFilter(f.id)}
-              className={`shrink-0 rounded-xl px-2.5 py-1.5 text-[11.5px] font-bold transition-colors ${
-                filter === f.id ? "bg-white/10 text-white" : "text-white/40 hover:bg-white/5 hover:text-white/75"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+      <div className={tab === "auction" ? "hidden" : "flex flex-col gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] p-3 sm:flex-row sm:items-center sm:justify-end"}>
         <div className="flex flex-wrap gap-1.5">
           <select
             value={collection}

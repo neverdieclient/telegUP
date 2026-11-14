@@ -1,5 +1,6 @@
 import type { Case, Gift, Rarity } from "../data/gifts";
 import { GIFTS, RARITY_ORDER, casePool } from "../data/gifts";
+import { UPGRADE_STARS } from "./pricing";
 
 /**
  * Cryptographically-seeded uniform float in [0, 1).
@@ -220,6 +221,34 @@ export function rollModelUpgrade(from: Gift, maxStars = Infinity, pool: Gift[] =
     return { ...g, weight: 1 / Math.pow(ratio, 1.6) };
   });
   return weightedPick(weighted);
+}
+
+/**
+ * Честный розыгрыш модели — чистый случай.
+ *
+ * В пуле вся коллекция, кроме текущей модели: топовая выпадает так же часто,
+ * как самая дешёвая, без «только лучше» и без перекоса к мелким шагам.
+ * Бросок стоит фиксированные 15★ (см. `UPGRADE_STARS`), поэтому цена не
+ * зависит от того, что выпало.
+ *
+ * Улучшать можно только базовый подарок: модель, которая уже выпала из
+ * апгрейда, — финальная вещь, второй раз её не трогаем.
+ *
+ * Возвращает null, если улучшать нечего или не хватает звёзд.
+ */
+export function rollGuarantee(
+  from: Gift,
+  pool: readonly Gift[],
+  balance: number,
+): { gift: Gift; cost: number } | null {
+  if (from.kind !== "gift") return null;
+  const models = pool.filter(
+    (g) => g.slug === from.slug && g.kind === "model" && g.id !== from.id,
+  );
+  if (!models.length) return null;
+  if (balance < UPGRADE_STARS) return null;
+  // у всех моделей коллекции одинаковый шанс
+  return { gift: models[randInt(models.length)], cost: UPGRADE_STARS };
 }
 
 /** One of the model bundles shown in the upgrade picker. */
