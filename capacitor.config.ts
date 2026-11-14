@@ -9,6 +9,8 @@ const config: CapacitorConfig = {
   server: {
     url: 'https://telegup.mooo.com',
     cleartext: false,
+    androidScheme: 'https',
+    allowNavigation: ['telegup.mooo.com'],
   },
 };
 

@@ -171,6 +171,9 @@ html[data-device="mobile"] nav.fixed.inset-x-0.bottom-0 {
     @apply bg-ink text-white font-sans antialiased;
     min-height: 100dvh;
     overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: auto;
     background-color: #0a0a0a;
     background-image:
       radial-gradient(900px 520px at 50% -12%, rgba(163, 255, 18, 0.07), transparent 70%),
