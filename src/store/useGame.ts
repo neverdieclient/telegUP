@@ -737,8 +737,8 @@ export const initialState = {
     quietFrom: "",
     quietTo: "",
     discount: 0,
-    // direct gift sales are hidden by default; upgrades of a gift stay open
-    giftBuyEnabled: false,
+    // direct gift sales are on by default; the upgrade of a model is open too
+    giftBuyEnabled: true,
     giftUpgradesEnabled: true,
     premiumBoost: true,
     adsEnabled: false,
@@ -1966,7 +1966,11 @@ export const useGame = create<State>()(
     }),
     {
       name: STORE_KEY,
-      version: 5,
+      // 5 → 6: в 5-м сохранении ещё не было полей `upgradeOnly`,
+      // `giftBuyEnabled` и `giftUpgradesEnabled`. Миграция их добавляет, иначе
+      // старое сохранение читалось как «апгрейд закрыт», а панель магазина
+      // в админке падала на `upgradeOnly.length`.
+      version: 6,
       /**
        * Every account owns its own slot (see lib/scopedStorage), so the save
        * of one player can never end up under another account.
@@ -1979,6 +1983,29 @@ export const useGame = create<State>()(
         }
         if (!Array.isArray(state.profile?.altNames)) {
           state.profile = { ...state.profile, altNames: [] };
+        }
+        // страховка для сохранений, которые пережили миграцию: список
+        // «только апгрейд» всегда должен быть массивом, иначе панель магазина
+        // в админке падает на `upgradeOnly.length`, а тумблеры магазина —
+        // булевы, иначе маркет пишет «не продаётся» вместо цены
+        if (
+          !Array.isArray(state.admin?.upgradeOnly) ||
+          typeof state.admin?.giftBuyEnabled !== "boolean" ||
+          typeof state.admin?.giftUpgradesEnabled !== "boolean"
+        ) {
+          state.admin = {
+            ...initialState.admin,
+            ...(state.admin ?? {}),
+            giftBuyEnabled:
+              typeof state.admin?.giftBuyEnabled === "boolean"
+                ? state.admin.giftBuyEnabled
+                : initialState.admin.giftBuyEnabled,
+            giftUpgradesEnabled:
+              typeof state.admin?.giftUpgradesEnabled === "boolean"
+                ? state.admin.giftUpgradesEnabled
+                : initialState.admin.giftUpgradesEnabled,
+            upgradeOnly: Array.isArray(state.admin?.upgradeOnly) ? state.admin.upgradeOnly : [],
+          };
         }
       },
       migrate: (persisted: unknown) => {
@@ -2032,6 +2059,18 @@ export const useGame = create<State>()(
         for (const dead of ["payoutBalance", "payCard", "payHolder", "payBank", "payTon", "payQr"]) {
           delete restAdmin[dead];
         }
+        // Тумблеры магазина — булевы. В старом сохранении их просто нет, и
+        // тогда решают значения по умолчанию: подарок продаётся, апгрейд
+        // модели открыт. Без этого «не определено» превращалось в «выключено»
+        // — маркет писал «не продаётся», а модели «закрыто».
+        const giftBuyEnabled =
+          typeof restAdmin.giftBuyEnabled === "boolean"
+            ? restAdmin.giftBuyEnabled
+            : initialState.admin.giftBuyEnabled;
+        const giftUpgradesEnabled =
+          typeof restAdmin.giftUpgradesEnabled === "boolean"
+            ? restAdmin.giftUpgradesEnabled
+            : initialState.admin.giftUpgradesEnabled;
 
         return {
           ...initialState,
@@ -2051,6 +2090,8 @@ export const useGame = create<State>()(
           admin: {
             ...initialState.admin,
             ...(restAdmin as Partial<State["admin"]>),
+            giftBuyEnabled,
+            giftUpgradesEnabled,
             upgradeOnly: Array.isArray(restAdmin.upgradeOnly) ? (restAdmin.upgradeOnly as string[]) : [],
           },
           stats: { ...emptyStats, ...(s.stats ?? {}) },

@@ -105,6 +105,8 @@ function UpgradeOnlyDesk() {
   const gifts = useAllGifts();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  // старое сохранение могло не знать про этот список — список всегда массив
+  const upgradeOnly = admin.upgradeOnly ?? [];
 
   const list = useMemo(() => {
     const base = gifts.filter((g) => g.kind === "gift");
@@ -118,15 +120,15 @@ function UpgradeOnlyDesk() {
         )
       : base;
     // уже запрещённые — наверх, чтобы их было видно без прокрутки
-    const banned = new Set(admin.upgradeOnly);
+    const banned = new Set(upgradeOnly);
     return [...filtered].sort((a, b) => Number(banned.has(b.slug)) - Number(banned.has(a.slug)));
-  }, [gifts, q, admin.upgradeOnly]);
+  }, [gifts, q, upgradeOnly]);
 
-  const banned = new Set(admin.upgradeOnly);
+  const banned = new Set(upgradeOnly);
   const toggle = (slug: string) => {
     const next = banned.has(slug)
-      ? admin.upgradeOnly.filter((s) => s !== slug)
-      : [...admin.upgradeOnly, slug];
+      ? upgradeOnly.filter((s) => s !== slug)
+      : [...upgradeOnly, slug];
     setAdmin({ upgradeOnly: next });
     logAdmin("магазин", `только апгрейд: ${slug} — ${banned.has(slug) ? "снято" : "включено"}`);
   };
@@ -138,7 +140,7 @@ function UpgradeOnlyDesk() {
           <span className="block text-[12px] font-extrabold">
             Только апгрейд
             <span className="ml-1.5 rounded-md border border-violet/30 bg-violet/10 px-1.5 py-0.5 text-[9.5px] font-black text-violet">
-              {admin.upgradeOnly.length}
+              {upgradeOnly.length}
             </span>
           </span>
           <span className="mt-0.5 block text-[10px] leading-snug text-white/35">
@@ -160,17 +162,17 @@ function UpgradeOnlyDesk() {
             <button
               onClick={() => {
                 const all = gifts.filter((g) => g.kind === "gift").map((g) => g.slug);
-                setAdmin({ upgradeOnly: admin.upgradeOnly.length >= all.length ? [] : all });
+                setAdmin({ upgradeOnly: upgradeOnly.length >= all.length ? [] : all });
                 logAdmin(
                   "магазин",
-                  admin.upgradeOnly.length >= all.length
+                  upgradeOnly.length >= all.length
                     ? "только апгрейд: снято у всех"
                     : "только апгрейд: включено у всех",
                 );
               }}
               className="shrink-0 rounded-lg border border-white/12 px-2 text-[10px] font-bold text-white/45 hover:text-white"
             >
-              {admin.upgradeOnly.length ? "снять все" : "все"}
+              {upgradeOnly.length ? "снять все" : "все"}
             </button>
           </div>
 
