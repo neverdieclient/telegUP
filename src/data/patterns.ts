@@ -3,13 +3,10 @@
  *
  * В настоящем Телеграме у подарка на фоне лежит узор (symbol): монохромный
  * знак, повторённый плиткой по всей площади — «тиснение» поверх цвета фона.
- * Раньше здесь были текстовые символы, теперь — отдельные картинки-тайлы в
- * `public/patterns/<id>.svg` (базовый набор) или `.webp` (импорт из скрапера).
- *
- * Импорт настоящих паттернов Telegram (скачанных gift-parser.py в папку
- * `<Collection>_patterns/` с PNG-файлами символов):
- *   node scripts/build-patterns.mjs "C:\путь\к\Plushpepe_patterns"
- * Скрипт конвертирует PNG → webp и печатает строки для PALETTE ниже.
+ * Базовый набор — SVG-тайлы в `public/patterns/<id>.svg`. Реальные символы
+ * из Telegram (PNG из gift-parser.py) импортируются как webp:
+ *   node scripts/build-patterns.mjs "C:\...\<Collection>_patterns"
+ * после чего добавьте выведенные строки в LIST с расширением "webp".
  *
  * Идентификаторы сохранены, поэтому узоры уже выданных подарков остаются
  * на месте. Фон и узор выпадают чистым случаем, у всех равный шанс.
@@ -22,8 +19,9 @@ export type GiftPattern = {
   src: string;
 };
 
-/** `[id, название]` — по одной строке на узор. */
-const LIST: [string, string][] = [
+/** `[id, название, расширение?]` — по одной строке на узор. */
+const LIST: [string, string, ("svg" | "webp")?][] = [
+  // базовые символы
   ["hearts", "Hearts"],
   ["ace-of-hearts", "Ace Of Hearts"],
   ["club", "Club"],
@@ -48,21 +46,21 @@ const LIST: [string, string][] = [
   ["flag", "Flag"],
   ["note", "Music Note"],
   ["notes", "Notes"],
+  // реальные символы Telegram (PlushPepe)
+  ["blood-drop-0-5", "Blood Drop 0.5%", "webp"],
+  ["cash-0-4", "Cash 0.4%", "webp"],
+  ["celtic-cross-0-4", "Celtic Cross 0.4%", "webp"],
+  ["feather-0-3", "Feather 0.3%", "webp"],
+  ["jellyfish-0-3", "Jellyfish 0.3%", "webp"],
+  ["loveberry-0-3", "Loveberry 0.3%", "webp"],
 ];
 
 const BASE = import.meta.env.BASE_URL;
 
-/**
- * Формат файла узора: по умолчанию `.svg` (базовый набор). Для импортированных
- * из скрапера PNG-паттернов поменяйте расширение нужных записей на `.webp`
- * (или добавьте новые строки после конвертации build-patterns.mjs).
- */
-const ext = (id: string): string => `${BASE}patterns/${id}.svg`;
-
-export const PATTERNS: GiftPattern[] = LIST.map(([id, name]) => ({
+export const PATTERNS: GiftPattern[] = LIST.map(([id, name, ext = "svg"]) => ({
   id,
   name,
-  src: ext(id),
+  src: `${BASE}patterns/${id}.${ext}`,
 }));
 
 export const PATTERN_BY_ID: Record<string, GiftPattern> = Object.fromEntries(
