@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useGame } from "../store/useGame";
@@ -23,9 +23,8 @@ import { useOwner } from "../lib/useOwner";
  * separators between groups, no glow and no glass. Same routes, same order —
  * the difference is that a page can be read without decoration.
  *
- * Everything else here is shared: the header, the bottom bar (five taps on a
- * phone, with «Ещё» opening the rest), the owner-only console entry point and
- * the footer disclaimer.
+ * Navigation: grouped sidebar on desktop and a slide-out menu (opened from the
+ * header) on mobile instead of a crowded bottom tab bar.
  */
 
 type NavItem = {
@@ -152,8 +151,7 @@ const NAV: NavItem[] = [
   },
 ];
 
-/** The four routes a phone keeps at the bottom; everything else is «Ещё». */
-const PRIMARY = ["/app", "/app/cases", "/app/market", "/app/premium"];
+const GROUP_ORDER: NavItem["group"][] = ["игра", "деньги", "сообщество", "прочее"];
 
 const GROUP_TITLE: Record<NavItem["group"], string> = {
   игра: "Игра",
@@ -223,7 +221,7 @@ function BalancePill() {
   );
 }
 
-function Header() {
+function Header({ onMenu }: { onMenu: () => void }) {
   const profile = useGame((s) => s.profile);
   const { isOwner } = useOwner();
 
@@ -232,7 +230,15 @@ function Header() {
       {/* blur — только 12px: липкая шапка с blur(40px) перерисовывает подложку
           на каждом кадре прокрутки, и именно она давала «мыло» и рывки */}
       <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between gap-3 px-4 md:px-6">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <button
+            type="button"
+            onClick={onMenu}
+            className="grid size-10 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/70 transition hover:bg-white/[0.08] hover:text-white md:hidden"
+            aria-label="Меню"
+          >
+            <Icon d="M4 7h16M4 12h16M4 17h16" className="size-5" />
+          </button>
           <Brand />
           <nav className="hidden items-center gap-0.5 lg:flex">
             {NAV.filter((n) => ["/app/cases", "/app/market", "/app/premium", "/app/ton", "/app/updates"].includes(n.to)).map(
@@ -404,111 +410,117 @@ function SideNavMinimal() {
   );
 }
 
-/** Everything that did not fit in the bottom bar, in a sheet. */
-function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** Slide-out navigation for mobile: grouped sections instead of a bottom tab bar. */
+function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { isOwner } = useOwner();
   const { pathname } = useLocation();
+
   useEffect(() => {
     if (open) onClose();
-    // close on navigation: the sheet exists to get somewhere
+    // close on navigation
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[70] md:hidden" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <motion.div
-        initial={{ y: 30, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.18 }}
-        onClick={(e) => e.stopPropagation()}
-        className="absolute inset-x-0 bottom-0 max-h-[78dvh] overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[#0b0b0e] p-4 pb-[calc(env(safe-area-inset-bottom)+18px)]"
-      >
-        <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-white/15" />
-        <div className="grid grid-cols-3 gap-2">
-          {NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/app"}
-              className={({ isActive }) =>
-                [
-                  "flex flex-col items-center gap-1.5 rounded-2xl border px-1 py-3 text-[10.5px] font-bold transition",
-                  isActive
-                    ? "border-neon/30 bg-neon/10 text-neon"
-                    : "border-white/[0.06] bg-white/[0.02] text-white/55",
-                ].join(" ")
-              }
-            >
-              <Icon d={item.icon} className="size-5" />
-              {item.short}
-            </NavLink>
-          ))}
-          {isOwner && (
-            <NavLink
-              to="/admin"
-              className="flex flex-col items-center gap-1.5 rounded-2xl border border-mythic/25 bg-mythic/10 px-1 py-3 text-[10.5px] font-bold text-mythic"
-            >
-              <Icon d="M12 3l2 5h5l-4 3.5 1.5 5.5L12 14l-4.5 3 1.5-5.5L5 8h5Z" className="size-5" />
-              Админка
-            </NavLink>
-          )}
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function BottomNav() {
-  const [more, setMore] = useState(false);
-  const items = NAV.filter((n) => PRIMARY.includes(n.to));
-
-  return (
-    <>
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/8 bg-ink/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden">
-        <div className="flex items-stretch px-1 py-1.5">
-          {items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/app"}
-              className={({ isActive }) =>
-                [
-                  "flex flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[9.5px] font-bold transition-colors",
-                  isActive ? "text-neon" : "text-white/40",
-                ].join(" ")
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <span className={`grid size-9 place-items-center rounded-xl ${isActive ? "bg-neon/12" : ""}`}>
-                    <Icon d={item.icon} className="size-[18px]" />
-                  </span>
-                  {item.short}
-                </>
-              )}
-            </NavLink>
-          ))}
-          <button
-            onClick={() => setMore(true)}
-            className="flex flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[9.5px] font-bold text-white/40"
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-[70] md:hidden">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={onClose}
+          />
+          <motion.aside
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{ type: "spring", stiffness: 420, damping: 38 }}
+            className="absolute inset-y-0 left-0 flex w-[min(86vw,320px)] flex-col border-r border-white/10 bg-[#0b0b0e] shadow-2xl"
           >
-            <span className="grid size-9 place-items-center rounded-xl">
-              <Icon d="M5 7h14M5 12h14M5 17h14" className="size-[18px]" />
-            </span>
-            Ещё
-          </button>
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-8 place-items-center rounded-lg border border-neon/30 bg-neon/10">
+                  <svg viewBox="0 0 24 24" className="size-3.5 text-neon" fill="currentColor">
+                    <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />
+                  </svg>
+                </span>
+                <span className="text-[15px] font-extrabold tracking-tight">
+                  teleg<span className="text-neon">UP</span>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="grid size-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/60 hover:text-white"
+                aria-label="Закрыть"
+              >
+                <Icon d="M6 6l12 12M18 6 6 18" className="size-4.5" />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+              {GROUP_ORDER.map((group) => {
+                const items = NAV.filter((n) => n.group === group);
+                if (!items.length) return null;
+                return (
+                  <div key={group} className="mb-4">
+                    <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-white/30">
+                      {GROUP_TITLE[group]}
+                    </p>
+                    <div className="space-y-0.5">
+                      {items.map((item) => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          end={item.to === "/app"}
+                          className={({ isActive }) =>
+                            [
+                              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all",
+                              isActive
+                                ? "bg-neon/10 text-neon ring-1 ring-neon/20"
+                                : "text-white/55 hover:bg-white/[0.04] hover:text-white/85",
+                            ].join(" ")
+                          }
+                        >
+                          <span className="grid size-8 place-items-center rounded-lg bg-white/[0.04]">
+                            <Icon d={item.icon} className="size-[17px]" />
+                          </span>
+                          {item.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {isOwner && (
+                <div className="mt-2 border-t border-white/[0.06] pt-3">
+                  <NavLink
+                    to="/admin"
+                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold text-mythic/80 hover:bg-mythic/10 hover:text-mythic"
+                  >
+                    <span className="grid size-8 place-items-center rounded-lg border border-mythic/25 bg-mythic/10">
+                      <Icon d="M12 3l2 5h5l-4 3.5 1.5 5.5L12 14l-4.5 3 1.5-5.5L5 8h5Z" className="size-[17px]" />
+                    </span>
+                    Админ-панель
+                  </NavLink>
+                </div>
+              )}
+            </nav>
+          </motion.aside>
         </div>
-      </nav>
-      <MoreSheet open={more} onClose={() => setMore(false)} />
-    </>
+      )}
+    </AnimatePresence>
   );
 }
 
 export function Layout() {
   const { pathname } = useLocation();
   const skin = useGame((s) => s.skin);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
@@ -517,16 +529,16 @@ export function Layout() {
   return (
     <div className={`min-h-dvh ${skin === "minimal" ? "app-shell-minimal" : "grain"}`}>
       <ToastStack />
-      <Header />
+      <Header onMenu={() => setMenuOpen(true)} />
       <div className="mx-auto flex max-w-[1400px]">
         {skin === "minimal" ? <SideNavMinimal /> : <SideNavClassic />}
-        <main className="min-w-0 flex-1 px-4 pb-28 pt-5 md:px-6 md:pb-10">
+        <main className="min-w-0 flex-1 px-4 pb-10 pt-5 md:px-6">
           {/* 300×250 between the nav and content — does not interrupt play. */}
           <AdSlot id="inline" className="mx-auto mb-5 max-w-[300px]" />
           <Outlet />
         </main>
       </div>
-      <BottomNav />
+      <MobileNav open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>
   );
 }

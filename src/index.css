@@ -154,12 +154,7 @@ html[data-device="mobile"] header nav.lg\:flex {
   display: none !important;
 }
 
-/* the bottom tab bar is `md:hidden`, bring it back inside the frame */
-html[data-device="mobile"] nav.fixed.inset-x-0.bottom-0 {
-  display: block !important;
-  max-width: 480px;
-  margin-inline: auto;
-}
+/* mobile navigation is a slide-out menu (opened from header), no bottom bar */
 
 @layer base {
   html {
