@@ -5,10 +5,11 @@ import { useEffect, useState } from "react";
  * докачиваются при первом входе — так сам .apk остаётся маленьким.
  *
  * Показывает экран загрузки с прогрессом и складывает файлы в HTTP-кэш
- * браузера/WebView. После завершения (или пропуска) больше не показывается.
+ * браузера/WebView. «Пропустить» убирает экран, но докачка продолжается в фоне.
+ * После полного завершения больше не показывается.
  */
 const DONE_KEY = "telegup:assets-preloaded:v1";
-const CONCURRENCY = 32;
+const CONCURRENCY = 48;
 
 export function AssetPreloader() {
   const [state, setState] = useState<
@@ -27,26 +28,27 @@ export function AssetPreloader() {
     if (state.phase === "hidden") return;
     let cancelled = false;
 
-    const finish = () => {
+    const markDone = () => {
       try {
         localStorage.setItem(DONE_KEY, "1");
       } catch {
         /* ignore */
       }
-      if (!cancelled) setState({ phase: "hidden" });
     };
 
     (async () => {
       try {
         const res = await fetch("/preload-assets.json", { cache: "no-store" });
         if (!res.ok) {
-          finish();
+          markDone();
+          if (!cancelled) setState({ phase: "hidden" });
           return;
         }
         const list = (await res.json()) as string[];
         const total = list.length;
         if (!total) {
-          finish();
+          markDone();
+          if (!cancelled) setState({ phase: "hidden" });
           return;
         }
         if (!cancelled) setState({ phase: "loading", done: 0, total });
@@ -55,7 +57,7 @@ export function AssetPreloader() {
         let index = 0;
         const bump = () => {
           done += 1;
-          if (!cancelled) setState({ phase: "loading", done, total });
+          if (!cancelled) setState((s) => (s.phase === "loading" ? { ...s, done } : s));
         };
 
         const worker = async () => {
@@ -63,7 +65,7 @@ export function AssetPreloader() {
             const i = index++;
             const url = list[i];
             try {
-              // кладём в HTTP-кэш WebView/браузера
+              // кладём в HTTP-кэш WebView/браузера (быстро, в фоне)
               await fetch(url, { cache: "force-cache", mode: "no-cors" });
             } catch {
               /* пропускаем битый/недоступный файл — не валим загрузку */
@@ -80,7 +82,8 @@ export function AssetPreloader() {
       } catch {
         /* сеть недоступна — не блокируем вход */
       }
-      finish();
+      markDone();
+      if (!cancelled) setState({ phase: "hidden" });
     })();
 
     return () => {
@@ -117,18 +120,12 @@ export function AssetPreloader() {
 
         <button
           type="button"
-          onClick={() => {
-            try {
-              localStorage.setItem(DONE_KEY, "1");
-            } catch {
-              /* ignore */
-            }
-            setState({ phase: "hidden" });
-          }}
+          onClick={() => setState({ phase: "hidden" })}
           className="mt-6 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[12px] font-bold text-white/60 hover:bg-white/10 hover:text-white"
         >
           Пропустить
         </button>
+        <p className="mt-2 text-[10px] text-white/20">Докачка продолжится в фоне</p>
       </div>
     </div>
   );
