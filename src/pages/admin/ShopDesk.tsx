@@ -7,6 +7,7 @@ import { logAdmin } from "../../lib/adminTools";
 import { useAllGifts } from "../../lib/useCatalog";
 import { RARITY_META } from "../../data/gifts";
 import { Button } from "../../components/ui/Button";
+import { saveGiftAppConfig } from "../../lib/appConfig";
 
 /* --------------------------------------------------------------- gifts */
 
