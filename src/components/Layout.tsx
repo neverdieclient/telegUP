@@ -137,6 +137,13 @@ const NAV: NavItem[] = [
     icon: "M12 3v12m0 0 4-4m-4 4-4-4M5 20h14",
   },
   {
+    to: "/app/download",
+    label: "Скачать APK",
+    short: "APK",
+    group: "прочее",
+    icon: "M12 3v10m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2",
+  },
+  {
     to: "/app/profile",
     label: "Настройки",
     short: "Ещё",

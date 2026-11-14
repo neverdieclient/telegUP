@@ -15,6 +15,7 @@ export function AssetPreloader() {
   const [state, setState] = useState<
     | { phase: "idle" }
     | { phase: "loading"; done: number; total: number }
+    | { phase: "background"; done: number; total: number }
     | { phase: "hidden" }
   >(() => {
     try {
@@ -26,7 +27,7 @@ export function AssetPreloader() {
 
   useEffect(() => {
     if (state.phase === "hidden") return;
-    let cancelled = false;
+    let active = true;
 
     const markDone = () => {
       try {
@@ -41,23 +42,26 @@ export function AssetPreloader() {
         const res = await fetch("/preload-assets.json", { cache: "no-store" });
         if (!res.ok) {
           markDone();
-          if (!cancelled) setState({ phase: "hidden" });
+          if (active) setState({ phase: "hidden" });
           return;
         }
         const list = (await res.json()) as string[];
         const total = list.length;
         if (!total) {
           markDone();
-          if (!cancelled) setState({ phase: "hidden" });
+          if (active) setState({ phase: "hidden" });
           return;
         }
-        if (!cancelled) setState({ phase: "loading", done: 0, total });
+        if (active) setState({ phase: "loading", done: 0, total });
 
         let done = 0;
         let index = 0;
         const bump = () => {
           done += 1;
-          if (!cancelled) setState((s) => (s.phase === "loading" ? { ...s, done } : s));
+          if (!active) return;
+          setState((s) =>
+            s.phase === "loading" || s.phase === "background" ? { ...s, done } : s,
+          );
         };
 
         const worker = async () => {
@@ -83,11 +87,11 @@ export function AssetPreloader() {
         /* сеть недоступна — не блокируем вход */
       }
       markDone();
-      if (!cancelled) setState({ phase: "hidden" });
+      if (active) setState({ phase: "hidden" });
     })();
 
     return () => {
-      cancelled = true;
+      active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -96,6 +100,29 @@ export function AssetPreloader() {
 
   const { done, total } = state;
   const pct = total ? Math.round((done / total) * 100) : 0;
+  const left = Math.max(0, total - done);
+
+  if (state.phase === "background") {
+    return (
+      <div className="pointer-events-none fixed bottom-4 left-1/2 z-[500] w-[min(92vw,360px)] -translate-x-1/2">
+        <div className="rounded-2xl border border-white/10 bg-[#121218]/95 px-4 py-3 shadow-lg backdrop-blur">
+          <div className="flex items-center justify-between gap-3 text-[11px] font-bold text-white/70">
+            <span>Докачка подарков…</span>
+            <span className="tabular-nums text-white/45">{pct}%</span>
+          </div>
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-neon transition-[width] duration-200"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-[10.5px] tabular-nums text-white/35">
+            осталось {left.toLocaleString("ru-RU")} из {total.toLocaleString("ru-RU")}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[500] flex flex-col items-center justify-center bg-[#0a0a0a] p-6 text-white">
@@ -120,7 +147,7 @@ export function AssetPreloader() {
 
         <button
           type="button"
-          onClick={() => setState({ phase: "hidden" })}
+          onClick={() => setState((s) => (s.phase === "loading" ? { ...s, phase: "background" } : s))}
           className="mt-6 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[12px] font-bold text-white/60 hover:bg-white/10 hover:text-white"
         >
           Пропустить

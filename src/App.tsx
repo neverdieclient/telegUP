@@ -34,6 +34,7 @@ const Chat = lazy(() => import("./pages/Chat"));
 const Craft = lazy(() => import("./pages/Craft"));
 const Premium = lazy(() => import("./pages/Premium"));
 const TonMarket = lazy(() => import("./pages/TonMarket"));
+const DownloadApp = lazy(() => import("./pages/DownloadApp"));
 
 function PageLoader() {
   return (
@@ -132,6 +133,7 @@ export default function App() {
             <Route path="premium" element={<Premium />} />
             <Route path="ton" element={<RequireOpen><TonMarket /></RequireOpen>} />
             <Route path="profile" element={<Profile />} />
+            <Route path="download" element={<DownloadApp />} />
             <Route path="chat" element={<Chat />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
