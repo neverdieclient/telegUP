@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useGame } from "../store/useGame";
-import { RARITY_META, DISCLAIMER } from "../data/gifts";
+import { RARITY_META, DISCLAIMER, SHOP_USERNAMES } from "../data/gifts";
 import { useGiftIndex } from "../lib/useCatalog";
 import { CheckMark } from "../components/ui/CheckMark";
 import { StarIcon, GiftArt } from "../components/gifts/GiftArt";
 import { useAuth, signOut, fetchPlayer, setInventoryVisibility, uploadAvatar, setMyAvatar, isAvatarFile } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 import { Row, Toggle, MARKS } from "./profile/rows";
-import { THEMES } from "../lib/theme";
+import { SKINS, THEMES, type SkinId } from "../lib/theme";
 import {
   Avatar,
   GradientNick,
@@ -32,18 +33,30 @@ export default function ProfilePage() {
   const toast = useGame((s) => s.toast);
   const theme = useGame((s) => s.theme);
   const setTheme = useGame((s) => s.setTheme);
+  const skin = useGame((s) => s.skin);
+  const setSkin = useGame((s) => s.setSkin);
+  const redeemPromo = useGame((s) => s.redeemPromo);
   const deviceMode = useGame((s) => s.deviceMode);
   const chooseDevice = useGame((s) => s.chooseDevice);
   const showInventory = useGame((s) => s.profile.showInventory);
   const setShowInventory = useGame((s) => s.setShowInventory);
   const setAvatar = useGame((s) => s.setAvatar);
+  const setMainUsername = useGame((s) => s.setMainUsername);
+  const setCollectibleUsername = useGame((s) => s.setCollectibleUsername);
+  const sellUsername = useGame((s) => s.sellUsername);
   const { user } = useAuth();
 
   const [draft, setDraft] = useState(profile.nickname);
   const [editing, setEditing] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  /** черновик промокода; чистится только после успешного погашения */
+  const [promoDraft, setPromoDraft] = useState("");
   const avatarInput = useRef<HTMLInputElement>(null);
   const myPinned = useMyPinnedGifts();
+
+  // Ники живут в настройках: основной и второй (коллекционный) — как в Telegram.
+  const usernames = profile.purchasedUsernames;
+  const collectibleOptions = usernames.filter((u) => u !== profile.nickname);
 
   const value = useMemo(
     () => inventory.reduce((a, i) => a + (GIFT_BY_ID[i.giftId]?.stars ?? 0), 0),
@@ -106,6 +119,38 @@ export default function ProfilePage() {
   };
 
   const activeMarks = MARKS.filter((m) => m.id === "basic" && profile.marks.includes("basic"));
+
+  /**
+   * Погасить промокод.
+   *
+   * Проверка и начисление живут в одном действии стора, поэтому здесь только
+   * перевод причины отказа в понятный текст. Код остаётся в поле, если не
+   * сработал — чтобы опечатку было видно и легко исправить.
+   */
+  const applyPromo = () => {
+    const res = redeemPromo(promoDraft);
+    if (res.ok) {
+      const { promo } = res;
+      const what =
+        promo.kind === "stars"
+          ? `${promo.amount.toLocaleString("ru-RU")} ★`
+          : promo.kind === "ton"
+            ? `${promo.amount} TON`
+            : `${promo.amount} дней Premium`;
+      setPromoDraft("");
+      toast({ kind: "success", title: "Промокод принят", message: `Зачислено: ${what}` });
+      return;
+    }
+    const reason =
+      res.reason === "empty"
+        ? "Введи код"
+        : res.reason === "missing"
+          ? "Такого кода нет"
+          : res.reason === "used"
+            ? "Ты уже использовал этот код"
+            : "Код закончился — все использования разобрали";
+    toast({ kind: "error", title: "Не сработало", message: reason });
+  };
 
   /**
    * Upload a picture and make it the avatar.
@@ -436,6 +481,173 @@ export default function ProfilePage() {
                 );
               })}
             </div>
+
+            {/* Скин — вторая ось оформления: раскладка, а не цвет */}
+            <p className="mt-4 text-[12.5px] font-bold text-white/85">Вид интерфейса</p>
+            <p className="text-[10.5px] text-white/30">Раскладка и оформление панелей</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {SKINS.map((v) => {
+                const active = skin === v.id;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => setSkin(v.id as SkinId)}
+                    aria-pressed={active}
+                    className={`rounded-2xl border px-2.5 py-2 text-left transition ${
+                      active
+                        ? "border-white/35 bg-white/[0.07]"
+                        : "border-white/8 bg-black/30 hover:border-white/20 hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 text-[11.5px] font-bold text-white/85">
+                      {v.name}
+                      {active && <span className="text-[9px] text-white/45">✓</span>}
+                    </span>
+                    <span className="mt-0.5 block text-[9.5px] leading-snug text-white/30">{v.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-4 border-t border-white/6 pt-3">
+            <p className="text-[12.5px] font-bold text-white/85">Промокод</p>
+            <p className="text-[10.5px] text-white/30">Звёзды, TON или дни Premium — если владелец выдал код</p>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={promoDraft}
+                onChange={(e) => setPromoDraft(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") applyPromo();
+                }}
+                placeholder="TELEGUP-XXXXXX"
+                spellCheck={false}
+                autoComplete="off"
+                className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 font-mono text-[12px] font-bold tracking-[0.08em] text-white outline-none placeholder:text-white/20 focus:border-neon/50"
+              />
+              <button
+                type="button"
+                onClick={applyPromo}
+                disabled={!promoDraft.trim()}
+                className="shrink-0 rounded-xl border border-neon/35 bg-neon/15 px-3 py-2 text-[11.5px] font-extrabold text-neon transition hover:bg-neon/25 disabled:opacity-40"
+              >
+                Активировать
+              </button>
+            </div>
+          </div>
+
+          {/* ---------------- юзернеймы ---------------- */}
+          <div className="mt-4 border-t border-white/6 pt-3">
+            <p className="text-[12.5px] font-bold text-white/85">Юзернеймы</p>
+            <p className="text-[10.5px] text-white/30">
+              Основной и второй ник — переключаются здесь, в настройках
+            </p>
+
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+                  Основной
+                </span>
+                <select
+                  value={profile.nickname}
+                  onChange={(e) => setMainUsername(e.target.value)}
+                  disabled={!usernames.length}
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-2.5 py-2 text-[12px] font-bold text-white/80 outline-none focus:border-neon/40 disabled:opacity-40"
+                >
+                  {usernames.length === 0 && <option value={profile.nickname}>@{profile.nickname}</option>}
+                  {usernames.map((u) => (
+                    <option key={u} value={u}>
+                      @{u}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+                  Второй (коллекционный)
+                </span>
+                <select
+                  value={profile.collectibleUsername ?? ""}
+                  onChange={(e) => setCollectibleUsername(e.target.value || null)}
+                  disabled={!collectibleOptions.length}
+                  className="w-full rounded-xl border border-white/10 bg-black/40 px-2.5 py-2 text-[12px] font-bold text-violet outline-none focus:border-violet/40 disabled:opacity-40"
+                >
+                  <option value="">— нет —</option>
+                  {collectibleOptions.map((u) => (
+                    <option key={u} value={u}>
+                      @{u}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {usernames.length === 0 ? (
+              <p className="mt-2 text-[11px] text-white/30">
+                Купи юзернейм в{" "}
+                <Link to="/app/shop" className="font-bold text-neon hover:underline">
+                  магазине
+                </Link>
+                , чтобы переключаться между никами.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <div className="flex items-end justify-between">
+                  <p className="text-[11px] font-bold text-white/50">Мои юзернеймы</p>
+                  <span className="text-[10px] text-white/25">{usernames.length} шт.</span>
+                </div>
+                {usernames.map((u) => {
+                  const active = u === profile.nickname;
+                  const shopPrice = SHOP_USERNAMES.find((s) => s.username === u)?.price;
+                  const value = Math.round((shopPrice ?? 800) * 0.6);
+                  return (
+                    <div
+                      key={u}
+                      className={`flex items-center justify-between gap-3 rounded-2xl border px-3 py-2 ${
+                        active ? "border-neon/30 bg-neon/[0.05]" : "border-white/8 bg-black/30"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-[12.5px] font-extrabold">@{u}</p>
+                        <p className="text-[10px] text-white/30">
+                          {active
+                            ? "активный ник"
+                            : profile.collectibleUsername === u
+                              ? "второй ник"
+                              : "свободен"}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="flex items-center gap-1 text-[11px] font-bold tabular-nums text-neon">
+                          <StarIcon className="size-3" /> {value.toLocaleString("ru-RU")}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={active}
+                          onClick={() => {
+                            if (sellUsername(u, value)) {
+                              toast({
+                                kind: "success",
+                                title: `@${u} продан`,
+                                message: `+${value.toLocaleString("ru-RU")} ★`,
+                              });
+                            }
+                          }}
+                          className="rounded-xl border border-danger/35 bg-danger/10 px-2.5 py-1.5 text-[11px] font-extrabold text-danger transition hover:bg-danger/20 disabled:opacity-35"
+                        >
+                          {active ? "В игре" : "Продать"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-[10px] text-white/25">
+                  Продать можно любой ник, кроме активного. Выплата — 60% цены.
+                </p>
+              </div>
+            )}
           </div>
         </section>
       </div>

@@ -49,7 +49,7 @@ function CaseCard({ c, onOpen, disabled }: { c: Case; onOpen: () => void; disabl
     <motion.div
       whileHover={{ y: -4 }}
       transition={{ type: "spring", stiffness: 300, damping: 24 }}
-      className="group relative flex flex-col overflow-hidden rounded-3xl border border-white/8 bg-white/[0.028] backdrop-blur-xl transition-colors hover:border-white/18"
+      className="group relative flex flex-col overflow-hidden rounded-3xl border border-white/8 bg-white/[0.028] backdrop-blur-sm transition-colors hover:border-white/18"
     >
       <div
         className="relative h-[124px] overflow-hidden"

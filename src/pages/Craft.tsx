@@ -143,7 +143,7 @@ export default function Craft() {
       </AnimatePresence>
 
       {groups.length === 0 ? (
-        <div className="rounded-3xl border border-white/8 bg-white/[0.028] p-8 text-center backdrop-blur-xl">
+        <div className="rounded-3xl border border-white/8 bg-white/[0.028] p-8 text-center backdrop-blur-sm">
           <StarIcon className="mx-auto size-10 text-white/15" />
           <p className="mt-3 text-[14px] font-extrabold">Нечего крафтить</p>
           <p className="mt-1 text-[12px] text-white/40">
@@ -163,7 +163,7 @@ export default function Craft() {
               return (
                 <section
                   key={g.slug}
-                  className={`rounded-3xl border p-4 backdrop-blur-xl transition-colors ${
+                  className={`rounded-3xl border p-4 backdrop-blur-sm transition-colors ${
                     isActive ? "border-neon/40 bg-neon/[0.04]" : "border-white/8 bg-white/[0.028]"
                   }`}
                 >
@@ -213,7 +213,7 @@ export default function Craft() {
 
           {/* craft panel */}
           <aside className="lg:sticky lg:top-4 lg:self-start">
-            <div className="rounded-3xl border border-white/8 bg-white/[0.028] p-5 backdrop-blur-xl">
+            <div className="rounded-3xl border border-white/8 bg-white/[0.028] p-5 backdrop-blur-sm">
               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/35">Сборка</p>
 
               <div className="mt-3 flex min-h-[56px] flex-wrap items-center gap-1.5 rounded-2xl border border-dashed border-white/12 bg-black/25 p-2">

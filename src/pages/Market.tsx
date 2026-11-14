@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { RARITY_META, RARITY_ORDER, SHOP_ITEMS, type Gift, type Rarity } from "../data/gifts";
 import { isPurchasable, loadCustomGifts } from "../data/customGifts";
 import { modelOptions } from "../lib/rng";
@@ -10,7 +10,7 @@ import { auctionOpensIn, isLotLive, useLiveAuctions } from "../lib/auctions";
 import type { AuctionRow } from "../lib/players";
 import { useGiftInbox } from "../lib/useGiftInbox";
 import { useBoost } from "../lib/starBoost";
-import { useGame } from "../store/useGame";
+import { canBuyGift, useGame } from "../store/useGame";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
 
@@ -146,6 +146,8 @@ export default function Market() {
   const addItem = useGame((s) => s.addItem);
   const bumpStat = useGame((s) => s.bumpStat);
   const toast = useGame((s) => s.toast);
+  const admin = useGame((s) => s.admin);
+  const upgradesOpen = admin.giftUpgradesEnabled;
 
   // built-in + owner-made gifts behave identically here
   const GIFTS = useAllGifts();
@@ -158,6 +160,21 @@ export default function Market() {
     for (const r of customRows) if (!isPurchasable(r, owner)) set.add(r.slug);
     return set;
   }, [customRows, owner]);
+
+  /**
+   * Базовый подарок закрыт для прямой покупки, если владелец выключил продажи
+   * целиком или пометил именно этот подарок «только апгрейд».
+   *
+   * Модели (`kind: "model"`) — это и есть улучшение, поэтому правило их не
+   * касается: закрыть апгрейд может только отдельный тумблер
+   * `giftUpgradesEnabled`.
+   */
+  const baseBlocked = (g: Gift) => g.kind === "gift" && !canBuyGift(admin, g.slug);
+
+  /** «Только апгрейд» прокручивает модалку к списку моделей — покупать тут нечего. */
+  const modelsRef = useRef<HTMLDivElement | null>(null);
+  const scrollModels = () =>
+    modelsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const boost = useBoost();
   const { lots: auctions, closedAt: lotsClosedAt } = useLiveAuctions();
@@ -208,6 +225,16 @@ export default function Market() {
   }, [tab]);
 
   const buy = (gift: Gift) => {
+    if (baseBlocked(gift)) {
+      // прямой покупки нет — открываем модели, там апгрейд и покупается
+      toast({
+        kind: "info",
+        title: "Только улучшение",
+        message: `${gift.name} целиком не продаётся — взять можно только улучшенную модель`,
+      });
+      setDetail(gift);
+      return;
+    }
     if (lockedSlugs.has(gift.slug)) {
       toast({ kind: "error", title: "Недоступно", message: "Этот подарок может купить только владелец" });
       return;
@@ -402,15 +429,21 @@ export default function Market() {
                 </div>
 
                 <div className="mt-2 flex gap-1.5">
-                  <Button
-                    full
-                    size="sm"
-                    variant={canBuy ? "primary" : "ghost"}
-                    disabled={!canBuy || busy === g.id}
-                    onClick={() => buy(g)}
-                  >
-                    {busy === g.id ? "Покупка…" : locked ? "Недоступно" : canBuy ? "Купить" : "Мало ★"}
-                  </Button>
+                  {baseBlocked(g) ? (
+                    <Button full size="sm" variant="violet" onClick={() => setDetail(g)}>
+                      {upgradesOpen ? "Только апгрейд" : "Не продаётся"}
+                    </Button>
+                  ) : (
+                    <Button
+                      full
+                      size="sm"
+                      variant={canBuy ? "primary" : "ghost"}
+                      disabled={!canBuy || busy === g.id}
+                      onClick={() => buy(g)}
+                    >
+                      {busy === g.id ? "Покупка…" : locked ? "Недоступно" : canBuy ? "Купить" : "Мало ★"}
+                    </Button>
+                  )}
                 </div>
               </div>
             </motion.article>
@@ -479,17 +512,21 @@ export default function Market() {
                   <Button
                     size="sm"
                     className="mt-2"
-                    variant={!lockedSlugs.has(detail.slug) && stars >= detail.stars ? "primary" : "ghost"}
-                    disabled={lockedSlugs.has(detail.slug) || stars < detail.stars || busy === detail.id}
-                    onClick={() => buy(detail)}
+                    variant={baseBlocked(detail) ? "violet" : !lockedSlugs.has(detail.slug) && stars >= detail.stars ? "primary" : "ghost"}
+                    disabled={baseBlocked(detail) ? !detailModels.length : lockedSlugs.has(detail.slug) || stars < detail.stars || busy === detail.id}
+                    onClick={() => (baseBlocked(detail) ? scrollModels() : buy(detail))}
                   >
-                    {busy === detail.id
-                      ? "Покупка…"
-                      : lockedSlugs.has(detail.slug)
-                        ? "Недоступно"
-                        : stars >= detail.stars
-                          ? "Купить базовый"
-                          : "Мало ★"}
+                    {baseBlocked(detail)
+                      ? detailModels.length
+                        ? "Только улучшение — ниже"
+                        : "Прямой покупки нет"
+                      : busy === detail.id
+                        ? "Покупка…"
+                        : lockedSlugs.has(detail.slug)
+                          ? "Недоступно"
+                          : stars >= detail.stars
+                            ? "Купить базовый"
+                            : "Мало ★"}
                   </Button>
                 </div>
                 <button
@@ -500,7 +537,7 @@ export default function Market() {
                 </button>
               </div>
 
-              <div className="mt-5">
+              <div className="mt-5" ref={modelsRef}>
                 <div className="mb-2 flex items-center gap-2">
                   <h3 className="text-[13px] font-extrabold tracking-tight">Улучшенные модели</h3>
                   <span className="rounded-md border border-violet/30 bg-violet/10 px-1.5 py-0.5 text-[9.5px] font-bold text-violet">
@@ -515,7 +552,7 @@ export default function Market() {
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                     {detailModels.map((m) => {
                       const locked = lockedSlugs.has(m.slug);
-                      const canBuy = !locked && stars >= m.stars;
+                      const canBuy = !locked && upgradesOpen && stars >= m.stars;
                       const meta = RARITY_META[m.rarity];
                       return (
                         <div
@@ -546,7 +583,7 @@ export default function Market() {
                             disabled={!canBuy || busy === m.id}
                             onClick={() => buy(m)}
                           >
-                            {busy === m.id ? "…" : locked ? "Недоступно" : canBuy ? "Купить" : "Мало ★"}
+                            {busy === m.id ? "…" : locked ? "Недоступно" : !upgradesOpen ? "Закрыто" : canBuy ? "Купить" : "Мало ★"}
                           </Button>
                         </div>
                       );

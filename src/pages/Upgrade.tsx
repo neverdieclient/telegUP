@@ -298,7 +298,7 @@ export default function UpgradePage() {
           disabled={phase === "spinning"}
         />
 
-        <div className="relative flex flex-col items-center justify-center rounded-3xl border border-white/8 bg-gradient-to-b from-white/[0.045] to-transparent p-4 backdrop-blur-xl">
+        <div className="relative flex flex-col items-center justify-center rounded-3xl border border-white/8 bg-gradient-to-b from-white/[0.045] to-transparent p-4 backdrop-blur-sm">
           <div className="relative" style={{ width: SIZE * 0.94, height: SIZE * 0.94 }}>
             <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="size-full">
               <defs>

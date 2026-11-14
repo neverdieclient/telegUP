@@ -1,13 +1,25 @@
 /**
- * Colour themes.
+ * Colour themes and layout skins.
  *
- * The UI is written against two accent utilities, `neon` (primary) and
- * `violet` (secondary). Tailwind v4 resolves those from CSS variables, so a
- * theme is just a set of variable overrides on <html>. Nothing else has to
- * know about theming.
+ * Two independent choices live in this file:
+ *
+ *  1. **Theme** — the accent colours. The UI is written against two accent
+ *     utilities, `neon` (primary) and `violet` (secondary). Tailwind v4
+ *     resolves those from CSS variables, so a theme is just a set of variable
+ *     overrides on <html>. Nothing else has to know about theming.
+ *
+ *  2. **Skin** — how the shell is laid out. `classic` is the original shell
+ *     (glow, glass, sidebar, grain). `minimal` is the 2.0 layout: flat
+ *     surfaces, hairline borders, no gradients and no glass — icons sit in
+ *     their own lane so they never cross the labels.
+ *
+ * Both are written to <html> (CSS variables + `data-skin`), so a single
+ * component can ask for `skin === "minimal"` and drop the decoration.
  */
 
 export type ThemeId = "lime" | "violet" | "ocean" | "sunset" | "rose" | "ice";
+
+export type SkinId = "classic" | "minimal";
 
 export type Theme = {
   id: ThemeId;
@@ -79,9 +91,21 @@ export const THEMES: Theme[] = [
   },
 ];
 
+export type Skin = {
+  id: SkinId;
+  name: string;
+  hint: string;
+};
+
+export const SKINS: Skin[] = [
+  { id: "classic", name: "Классика", hint: "свечение, стекло, сайдбар" },
+  { id: "minimal", name: "Минимал", hint: "плоско, тонкие линии, аккуратные иконки" },
+];
+
 export const THEME_BY_ID = Object.fromEntries(THEMES.map((t) => [t.id, t])) as Record<ThemeId, Theme>;
 
 export const DEFAULT_THEME: ThemeId = "lime";
+export const DEFAULT_SKIN: SkinId = "classic";
 
 export function applyTheme(id: ThemeId) {
   const t = THEME_BY_ID[id] ?? THEMES[0];
@@ -93,4 +117,10 @@ export function applyTheme(id: ThemeId) {
   root.style.setProperty("--color-ink", t.ink);
   root.dataset.theme = t.id;
   root.style.colorScheme = "dark";
+}
+
+export function applySkin(id: SkinId) {
+  const root = document.documentElement;
+  const skin: SkinId = id === "minimal" ? "minimal" : "classic";
+  root.dataset.skin = skin;
 }

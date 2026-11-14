@@ -67,7 +67,7 @@ function NewsCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.97 }}
       transition={{ type: "spring", stiffness: 260, damping: 28 }}
-      className="relative overflow-hidden rounded-3xl border border-white/8 bg-white/[0.025] p-4 backdrop-blur-xl"
+      className="relative overflow-hidden rounded-3xl border border-white/8 bg-white/[0.025] p-4 backdrop-blur-sm"
     >
       {post.pinned && (
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-neon/60 to-transparent" />

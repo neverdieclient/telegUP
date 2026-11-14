@@ -3,7 +3,7 @@ import { GIFT_BY_ID } from "../data/gifts";
 import { loadCustomGifts } from "../data/customGifts";
 import { useGame } from "../store/useGame";
 import { onlineEnabled, supabase } from "./supabase";
-import { pushProfileSafe, pullCloudSave } from "./players";
+import { pushProfileSafe, pullCloudSave, pushWallet } from "./players";
 
 /**
  * Mirrors the local game state into the shared Supabase table so that other
@@ -59,6 +59,13 @@ export function useStatsSync() {
       if (save && (save.stars > 0 || (save.inventory?.length ?? 0) > 0)) {
         now.adoptCloudSave(save);
       }
+      // кошелёк приходит тем же ответом: TON и дата подписки
+      if (save) {
+        now.adoptWallet({
+          ton: save.ton ?? 0,
+          premiumUntil: save.premium_until ? Date.parse(save.premium_until) : null,
+        });
+      }
       now.setCloudLoadedFor(onlineUserId);
       now.setOwnerSyncSeen(save?.owner_synced_at ?? null);
     })();
@@ -84,7 +91,7 @@ export function useStatsSync() {
         (a, i) => a + (GIFT_BY_ID[i.giftId]?.stars ?? 0),
         0,
       );
-      const key = `${s.stars}|${inventoryValue}|${s.inventory.length}|${s.profile.nickname}`;
+      const key = `${s.stars}|${inventoryValue}|${s.inventory.length}|${s.profile.nickname}|${s.ton}|${s.premiumUntil ?? 0}`;
       if (key === lastKey) return;
       lastKey = key;
 
@@ -99,9 +106,13 @@ export function useStatsSync() {
         lastFreeCase: s.lastFreeCaseAt,
         lastDaily: s.lastDailyAt,
         joinedAt: s.joinedAt,
-      }).finally(() => {
-        pushing.current = false;
-      });
+      })
+        // кошелёк — отдельной RPC: она берёт максимум, поэтому подарок
+        // владельца не затирается, а счётчик звёзд она не трогает
+        .then(() => pushWallet(s.ton, s.premiumUntil))
+        .finally(() => {
+          pushing.current = false;
+        });
     };
 
     const unsubscribe = useGame.subscribe(() => {

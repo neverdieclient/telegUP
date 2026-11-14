@@ -23,7 +23,7 @@ export function ToastStack() {
               transition={{ type: "spring", stiffness: 420, damping: 32 }}
               onClick={() => dismiss(t.id)}
               className={[
-                "pointer-events-auto flex w-full max-w-sm items-center gap-3 rounded-2xl border px-3.5 py-3 backdrop-blur-2xl",
+                "pointer-events-auto flex w-full max-w-sm items-center gap-3 rounded-2xl border px-3.5 py-3 backdrop-blur-md",
                 gift
                   ? `border-white/10 bg-carbon/90 ${meta ? meta.glow : ""}`
                   : t.kind === "success"

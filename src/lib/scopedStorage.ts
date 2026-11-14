@@ -172,6 +172,18 @@ export function readAccountState(scope: string): Record<string, unknown> | null 
   return parse(safeGet(accountKey(scope)))?.state ?? null;
 }
 
+/**
+ * Overwrite one account's save.
+ *
+ * Used by the owner's snapshot desk: a backup is only worth taking if it can be
+ * put back, and putting it back means writing the exact bytes into the slot the
+ * account opened. The caller reloads the page afterwards so zustand reads the
+ * restored save instead of the one in memory.
+ */
+export function writeAccountState(scope: string, state: Record<string, unknown>): void {
+  safeSet(accountKey(scope), JSON.stringify({ state, version: 0 }));
+}
+
 /** The last device part we wrote — the device slot only changes with the theme. */
 let lastDeviceRaw: string | null = null;
 

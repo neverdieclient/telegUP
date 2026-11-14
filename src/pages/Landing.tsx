@@ -239,7 +239,7 @@ export default function Landing() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
               transition={{ delay: i * 0.06, duration: 0.5 }}
-              className="group relative overflow-hidden rounded-3xl border border-white/8 bg-white/[0.03] p-5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:border-white/16 hover:bg-white/[0.055]"
+              className="group relative overflow-hidden rounded-3xl border border-white/8 bg-white/[0.03] p-5 backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 hover:border-white/16 hover:bg-white/[0.055]"
             >
               <div className="absolute -right-10 -top-10 size-32 rounded-full bg-neon/[0.07] opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100" />
               <span className="mb-4 grid size-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.05] text-neon">

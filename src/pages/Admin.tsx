@@ -9,11 +9,11 @@ import { AuctionAdmin } from "./admin/AuctionAdmin";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { CheckMark, type CheckMarkKind } from "../components/ui/CheckMark";
 import { Button } from "../components/ui/Button";
-import { useAuth } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 import {
   adminGiveBadge,
   adminGiveStars,
+  adminGiveTon,
   adminSetTier,
   adminSetUpgradeLuck,
   adminTakeBadge,
@@ -36,8 +36,13 @@ import {
   type RemoteInventoryItem,
   type PlayerRow,
 } from "../lib/players";
-import { getLocalSession, localSignIn, isOwnerEmail, verifyOwner } from "../lib/localAuth";
+import { getLocalSession, localSignIn, verifyOwner } from "../lib/localAuth";
+import { useOwner } from "../lib/useOwner";
 import { CosmeticsPicker, SLOT_TITLE, type CosmeticSlot } from "./admin/CosmeticsPicker";
+
+import { AuditDesk, DiscountDesk, PromoDesk } from "./admin/GrowthDesk";
+import { AdsDesk, GiftShopDesk } from "./admin/ShopDesk";
+import { SnapshotDesk } from "./admin/SnapshotDesk";
 
 /**
  * The single account allowed into the panel.
@@ -46,21 +51,24 @@ import { CosmeticsPicker, SLOT_TITLE, type CosmeticSlot } from "./admin/Cosmetic
  * The password is verified by Supabase (hashed server-side), so it is never
  * present in this bundle. Anyone can read this file in devtools and still be
  * unable to sign in without the real password.
+ *
+ * The check itself lives in `lib/useOwner` so the navigation, the maintenance
+ * gate and this console can never disagree about who the owner is.
  */
-const OWNER_EMAIL = "oleg123456789123456@gmail.com";
 
 const MARK_LIST: { id: CheckMarkKind; label: string }[] = [
   { id: "basic", label: "Проверенный" },
 ];
 
 /** Tabs keep the console to one screen — nothing is stacked six panels deep. */
-type AdminTab = "players" | "cosmetics" | "content" | "site";
+type AdminTab = "players" | "cosmetics" | "content" | "growth" | "site";
 
 const ADMIN_TABS: { id: AdminTab; label: string; hint: string }[] = [
   { id: "players", label: "Игроки", hint: "выдача, звёзды, знаки, бейджи" },
   { id: "cosmetics", label: "Красоты", hint: "градиент, свечение, баннер" },
   { id: "content", label: "Контент", hint: "подарки, аукцион, буст" },
-  { id: "site", label: "Сайт", hint: "входы, баны, обслуживание" },
+  { id: "growth", label: "Рост", hint: "промокоды, скидка, журнал действий" },
+  { id: "site", label: "Сайт", hint: "обслуживание, реклама, магазин" },
 ];
 
 function TabBar({ tab, onPick }: { tab: AdminTab; onPick: (t: AdminTab) => void }) {
@@ -459,34 +467,7 @@ function PlayerInventory({ playerId, nickname }: { playerId: string; nickname: s
   );
 }
 
-/** Owner-only gate: online → Supabase email; offline → local owner login. */
-export function useIsOwner() {
-  const { user, loading } = useAuth();
-  const [localOwner, setLocalOwner] = useState<boolean>(() => isOwnerEmail(getLocalSession()?.email));
-  const [isOwner, setIsOwner] = useState(false);
-
-  const email = (user?.email ?? "").trim().toLowerCase();
-  useEffect(() => {
-    setIsOwner(Boolean(user) && email === OWNER_EMAIL);
-  }, [user, email]);
-
-  const checked = !loading;
-
-  return {
-    isOwner: onlineEnabled ? isOwner : localOwner,
-    checked,
-    user,
-    signInLocal: (mail: string, pass: string) => {
-      const ok = verifyOwner(mail, pass);
-      if (ok) {
-        localSignIn(mail, pass);
-        setLocalOwner(true);
-      }
-      return ok;
-    },
-    signOutLocal: () => setLocalOwner(false),
-  };
-}
+/** Owner-only gate, shared with the navigation (see lib/useOwner). */
 
 /** Offline owner login — email + password, both typed by the owner. */
 function LocalUnlock({ onOk }: { onOk: () => void }) {
@@ -632,7 +613,7 @@ function TopPlayers({ onPick }: { onPick: (p: PlayerRow) => void }) {
 }
 
 export default function Admin() {
-  const { isOwner, checked, user } = useIsOwner();
+  const { isOwner, checked, user } = useOwner();
   // local unlock bumps this to re-render; the gate itself comes from localStorage
   // local unlock bumps `forceUnlock` to re-render; the gate itself is in localStorage
   const [unlockTick, forceUnlock] = useState(0);
@@ -643,6 +624,8 @@ export default function Admin() {
   const profile = useGame((s) => s.profile);
   const stats = useGame((s) => s.stats);
   const adminGrantStars = useGame((s) => s.adminGrantStars);
+  const adminGrantTon = useGame((s) => s.adminGrantTon);
+  const ton = useGame((s) => s.ton);
   const adminGrantBadge = useGame((s) => s.adminGrantBadge);
   const adminRevokeBadge = useGame((s) => s.adminRevokeBadge);
   const adminGrantPremium = useGame((s) => s.adminGrantPremium);
@@ -657,6 +640,8 @@ export default function Admin() {
   const GIFT_BY_ID = useGiftIndex();
 
   const [amount, setAmount] = useState(100000);
+  /** сумма выдачи TON, отдельная от звёзд — валюты разные */
+  const [tonAmount, setTonAmount] = useState(5);
   const [giftQuery, setGiftQuery] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
 
@@ -762,6 +747,25 @@ export default function Admin() {
       );
       return res;
     });
+    void refreshTarget(target.id);
+  };
+
+  /**
+   * Выдача TON.
+   *
+   * Себе — сразу в кошелёк этого браузера (и в облако при следующей
+   * синхронизации), другому игроку — через `owner_give_ton`, потому что его
+   * кошелёк лежит в его строке `profiles`, а не здесь.
+   */
+  const giveTonToTarget = async (n: number) => {
+    if (!target) {
+      adminGrantTon(n);
+      toast({ kind: "success", title: `${n > 0 ? "+" : ""}${n} TON себе` });
+      return;
+    }
+    await run(`ton:${n}`, `${n > 0 ? "+" : ""}${n} TON → @${target.nickname}`, () =>
+      adminGiveTon(target.id, n),
+    );
     void refreshTarget(target.id);
   };
 
@@ -1023,6 +1027,53 @@ export default function Admin() {
                 </button>
               ))}
             </div>
+
+            {/* TON — вторая валюта, выдаётся так же, как звёзды */}
+            <p className="mb-1.5 mt-3 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
+              <span>TON</span>
+              <span className="tabular-nums text-[#4aa8ff]/70">{ton.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} у тебя</span>
+            </p>
+            <div className="flex items-end gap-2">
+              <input
+                type="number"
+                step="0.1"
+                value={tonAmount}
+                onChange={(e) => setTonAmount(Number(e.target.value) || 0)}
+                className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12.5px] font-bold tabular-nums outline-none focus:border-[#4aa8ff]/50"
+              />
+              <Button
+                size="sm"
+                variant="violet"
+                disabled={!!busy || !targetId}
+                onClick={() => giveTonToTarget(tonAmount)}
+              >
+                +TON
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!!busy || !targetId}
+                onClick={() => giveTonToTarget(-tonAmount)}
+              >
+                −TON
+              </Button>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {[1, 5, 15, 40, 100].map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setTonAmount(v)}
+                  className="rounded-lg border border-white/8 px-2 py-1 text-[10px] font-bold text-white/45 hover:border-[#4aa8ff]/40 hover:text-white"
+                >
+                  {v} TON
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[10px] leading-snug text-white/25">
+              {isSelf
+                ? "Зачисляется в твой кошелёк сразу."
+                : `Через сервер: TON попадёт в кошелёк @${target?.nickname} при следующей синхронизации.`}
+            </p>
 
             {/* upgrade luck */}
             <p className="mb-1.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
@@ -1360,6 +1411,25 @@ export default function Admin() {
         </div>
       )}
 
+      {/* ---------------- growth ---------------- */}
+      {tab === "growth" && (
+        <div className="grid gap-3.5 lg:grid-cols-2">
+          <Panel title="Промокоды" desc="Код на звёзды, TON или дни Premium. Игрок вводит его в профиле." badge="promo">
+            <PromoDesk />
+          </Panel>
+
+          <div className="space-y-3.5">
+            <Panel title="Скидка" desc="Снижает все цены магазина разом — удобно на выходные." badge="sale">
+              <DiscountDesk />
+            </Panel>
+
+            <Panel title="Журнал действий" desc="Что и когда менялось. Здесь же видно, кто получил подарок." badge="audit">
+              <AuditDesk />
+            </Panel>
+          </div>
+        </div>
+      )}
+
       {/* ---------------- site ---------------- */}
       {tab === "site" && (
         <div className="grid gap-3.5 lg:grid-cols-2">
@@ -1401,6 +1471,54 @@ export default function Admin() {
                   />
                 </span>
               </button>
+
+              <div className="mt-2.5 rounded-xl border border-white/7 bg-black/25 px-3 py-2.5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/30">
+                  тихие часы
+                </p>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <input
+                    value={admin.quietFrom}
+                    onChange={(e) => setAdmin({ quietFrom: e.target.value })}
+                    placeholder="23:30"
+                    inputMode="numeric"
+                    maxLength={5}
+                    className="h-8 w-16 rounded-lg border border-white/10 bg-black/40 px-2 text-center text-[12px] tabular-nums outline-none placeholder:text-white/15 focus:border-amber-400/50"
+                  />
+                  <span className="text-[11px] text-white/25">→</span>
+                  <input
+                    value={admin.quietTo}
+                    onChange={(e) => setAdmin({ quietTo: e.target.value })}
+                    placeholder="07:00"
+                    inputMode="numeric"
+                    maxLength={5}
+                    className="h-8 w-16 rounded-lg border border-white/10 bg-black/40 px-2 text-center text-[12px] tabular-nums outline-none placeholder:text-white/15 focus:border-amber-400/50"
+                  />
+                  <button
+                    onClick={() => setAdmin({ quietFrom: "", quietTo: "" })}
+                    className="ml-auto rounded-lg border border-white/10 px-2 py-1 text-[10px] font-bold text-white/40 hover:text-white/75"
+                  >
+                    сбросить
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-white/25">
+                  {admin.quietFrom && admin.quietTo
+                    ? `Каждую ночь с ${admin.quietFrom} до ${admin.quietTo} игры закрываются сами.`
+                    : "Можно закрывать игры по расписанию — например, с 23:30 до 07:00."}
+                </p>
+              </div>
+
+              <label className="mt-2 block">
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.12em] text-white/30">
+                  текст на экране работ
+                </span>
+                <textarea
+                  value={admin.maintenanceNote}
+                  onChange={(e) => setAdmin({ maintenanceNote: e.target.value })}
+                  rows={2}
+                  className="w-full resize-none rounded-xl border border-white/10 bg-black/40 px-2.5 py-2 text-[11.5px] leading-snug outline-none focus:border-amber-400/40"
+                />
+              </label>
             </Panel>
 
             <Panel
@@ -1425,6 +1543,30 @@ export default function Admin() {
               <Button full size="sm" variant="danger" className="mt-2" onClick={() => setConfirmReset(true)}>
                 Полный сброс аккаунта
               </Button>
+            </Panel>
+
+            <Panel
+              title="Реклама"
+              desc="Свои объявления на сайте: дашборд, лендинг и внутри страниц."
+              badge="ads"
+            >
+              <AdsDesk />
+            </Panel>
+
+            <Panel
+              title="Магазин"
+              desc="Что можно купить за деньги: подарок целиком или только улучшение модели."
+              badge="shop"
+            >
+              <GiftShopDesk />
+            </Panel>
+
+            <Panel
+              title="Снимки сохранения"
+              desc="Страховка от ошибки: снимок перед сбросом аккаунта или чисткой инвентаря."
+              badge="backup"
+            >
+              <SnapshotDesk />
             </Panel>
 
             <Panel title="Статистика" desc="Счётчики текущего браузера." badge="stats">

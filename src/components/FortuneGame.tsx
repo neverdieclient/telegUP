@@ -63,7 +63,7 @@ export function FortuneGame() {
   };
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-white/8 bg-white/[0.028] p-5 backdrop-blur-xl">
+    <div className="relative overflow-hidden rounded-3xl border border-white/8 bg-white/[0.028] p-5 backdrop-blur-sm">
       <div className="pointer-events-none absolute inset-0 opacity-60 grid-bg" />
       <div className="pointer-events-none absolute -right-10 -top-12 size-44 rounded-full bg-legendary/15 blur-3xl" />
 

@@ -21,7 +21,7 @@ export function DeviceChooser() {
       initial={{ opacity: 0 }}
       animate={{ opacity: deviceChosen ? 0 : 1 }}
       style={{ pointerEvents: deviceChosen ? "none" : "auto" }}
-      className="fixed inset-0 z-[200] grid place-items-center overflow-y-auto bg-ink/95 p-5 backdrop-blur-xl"
+      className="fixed inset-0 z-[200] grid place-items-center overflow-y-auto bg-ink/95 p-5 backdrop-blur-sm"
     >
       <motion.div
         initial={{ opacity: 0, y: 24, scale: 0.96 }}

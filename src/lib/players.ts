@@ -10,6 +10,9 @@ export type PlayerRow = {
   nickname: string;
   tier: "Free" | "Premium";
   stars: number;
+  /** TON из облака; в старых строках отсутствует */
+  ton?: number | null;
+  premium_until?: string | null;
   inventory_value: number;
   items: number;
   badges: string[];
@@ -187,6 +190,46 @@ export async function adminTakeBadge(targetId: string, badge: string): Promise<{
 export async function adminSetTier(targetId: string, tier: "Premium" | "Free"): Promise<{ error?: string }> {
   if (!supabase) return { error: "Онлайн не подключён" };
   const { error } = await supabase.rpc("owner_set_tier", { target_id: targetId, tier });
+  return error ? { error: error.message } : {};
+}
+
+/**
+ * Кошелёк TON и срок Premium.
+ *
+ * Вторая валюта и дата подписки живут в облаке, иначе их не увидеть на другом
+ * устройстве, а выданный владельцем TON пропадёт вместе с чисткой кэша.
+ * `push` берёт максимум из присланного и сохранённого — обычная игра не
+ * затирает подарок владельца.
+ */
+export async function pushWallet(ton: number, premiumUntil: number | null): Promise<void> {
+  if (!supabase) return;
+  await supabase.rpc("player_push_wallet", {
+    p_ton: Math.max(0, Math.round(ton * 1e8) / 1e8),
+    p_premium_until: premiumUntil ? new Date(premiumUntil).toISOString() : null,
+  });
+}
+
+/** Свой кошелёк с сервера (`null` офлайн или если RPC ещё не применён). */
+export async function fetchWallet(): Promise<{ ton: number; premiumUntil: number | null } | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("player_get_wallet");
+  if (error || !data) return null;
+  const row = data as { ton?: number | string; premium_until?: string | null };
+  const ton = Number(row.ton ?? 0);
+  const until = row.premium_until ? Date.parse(row.premium_until) : NaN;
+  return { ton: Number.isFinite(ton) ? ton : 0, premiumUntil: Number.isFinite(until) ? until : null };
+}
+
+/**
+ * Выдать (или списать отрицательной суммой) TON игроку.
+ * `targetId` может быть своим — «себе» и «другому» это одна кнопка.
+ */
+export async function adminGiveTon(targetId: string, amount: number): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Онлайн не подключён" };
+  const { error } = await supabase.rpc("owner_give_ton", {
+    target_id: targetId,
+    amount: Math.round(amount * 1e8) / 1e8,
+  });
   return error ? { error: error.message } : {};
 }
 
@@ -376,6 +419,10 @@ export async function claimDelivery(id: number): Promise<void> {
 
 export type CloudSave = {
   stars: number;
+  /** вторая валюта; может отсутствовать в старых ответах сервера */
+  ton?: number | null;
+  /** срок Premium (ISO), null = подписки нет */
+  premium_until?: string | null;
   inventory: unknown[];
   inventory_value: number;
   items: number;

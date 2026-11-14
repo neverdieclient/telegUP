@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useGame } from "../store/useGame";
 import { ADS_ENABLED, AD_SLOTS, type AdSlotId } from "../lib/ads";
+import { useOwnerAdFor } from "../lib/ownerAds";
+import { OwnerAdCard } from "./OwnerAdCard";
 
 /**
  * Один рекламный блок Adsterra (баннер 300×250 или 728×90).
@@ -22,8 +24,12 @@ import { ADS_ENABLED, AD_SLOTS, type AdSlotId } from "../lib/ads";
 const FILL_TIMEOUT_MS = 9_000;
 
 export function AdSlot({ id, className = "" }: { id: AdSlotId; className?: string }) {
-  const admin = useGame((s) => s.admin.unlocked);
+  const admin = useGame((s) => s.admin);
   const cfg = AD_SLOTS[id];
+  /** The owner's own announcement for this slot, if they wrote one. */
+  const ownerAdRaw = useOwnerAdFor(id);
+  // the «свои объявления» switch hides them everywhere without deleting them
+  const ownerAd = admin.adsEnabled ? ownerAdRaw : null;
   const [filled, setFilled] = useState(false);
   const [failed, setFailed] = useState(false);
   const host = useRef<HTMLDivElement | null>(null);
@@ -33,7 +39,9 @@ export function AdSlot({ id, className = "" }: { id: AdSlotId; className?: strin
    */
   const key = useRef<string>("");
 
-  const active = ADS_ENABLED && !!cfg && !admin;
+  // an owner ad owns the slot: loading a network banner underneath it would
+  // count an impression nobody sees
+  const active = ADS_ENABLED && !!cfg && !admin.unlocked && !ownerAd;
 
   useEffect(() => {
     if (active && cfg && !key.current) {
@@ -80,6 +88,7 @@ export function AdSlot({ id, className = "" }: { id: AdSlotId; className?: strin
     };
   }, [active, cfg, id]);
 
+  if (ownerAd) return <OwnerAdCard ad={ownerAd} className={className} />;
   if (!active || !cfg) return null;
   if (failed && !filled) return null;
 

@@ -96,7 +96,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-4">
       {/* ------------------------------------------------------ header card */}
-      <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.025] to-transparent backdrop-blur-xl">
+      <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.06] via-white/[0.025] to-transparent backdrop-blur-sm">
         {/* the owner-made banner sits under everything else */}
         <ProfileBannerLayer banner={profile.profileBanner} />
         <div className="pointer-events-none absolute -right-20 -top-24 size-72 rounded-full bg-neon/[0.09] blur-[80px]" />
@@ -180,7 +180,7 @@ export default function Dashboard() {
         <div className="space-y-4">
           <FortuneGame />
 
-          <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-white/[0.028] p-5 backdrop-blur-xl">
+          <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-white/[0.028] p-5 backdrop-blur-sm">
             <div className="pointer-events-none absolute inset-0 opacity-60 grid-bg" />
 
             <div className="relative mb-3.5 flex items-end justify-between gap-2">

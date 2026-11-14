@@ -112,7 +112,7 @@ export default function Auth() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-white/8 bg-white/[0.035] p-5 backdrop-blur-2xl">
+        <div className="rounded-3xl border border-white/8 bg-white/[0.035] p-5 backdrop-blur-md">
           <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl border border-white/8 bg-black/30 p-1">
             {(
               [

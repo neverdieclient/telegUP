@@ -1,14 +1,15 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { BADGE_BY_ID, RARITY_META, RARITY_ORDER, SHOP_USERNAMES, type Gift, type Rarity } from "../data/gifts";
+import { RARITY_META, RARITY_ORDER, type Rarity } from "../data/gifts";
 import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
-import { MAX_PINNED, useGame } from "../store/useGame";
+import { guaranteePrice, pinCap, useGame } from "../store/useGame";
 import { useGiftInbox } from "../lib/useGiftInbox";
 import { GiftArt, RarityChip, StarIcon } from "../components/gifts/GiftArt";
-import { UsernameLootbox } from "../components/gifts/UsernameLootbox";
 import { Button } from "../components/ui/Button";
-import { boostedChance, chance, modelUpgradeChance, modelTargets, MODEL_BANDS, type ModelBand } from "../lib/rng";
+import { modelTargets } from "../lib/rng";
+import { SPRING_SNAPPY, SPRING_SOFT } from "../lib/motion";
 import { sendGift, searchPlayers, type PlayerRow } from "../lib/players";
 import { onlineEnabled } from "../lib/supabase";
 import { Avatar } from "../components/profile/Cosmetics";
@@ -25,6 +26,9 @@ function PinIcon({ className = "size-3.5" }: { className?: string }) {
     </svg>
   );
 }
+
+/** Сколько пикселей нужно протащить карточку, чтобы это стало перетаскиванием. */
+const PIN_DRAG_SLOP = 8;
 
 const SOURCE_LABEL: Record<string, string> = {
   case: "кейс",
@@ -49,25 +53,26 @@ export default function Inventory() {
   const sellItem = useGame((s) => s.sellItem);
   const sellAll = useGame((s) => s.sellAll);
   const togglePin = useGame((s) => s.togglePin);
+  const movePin = useGame((s) => s.movePin);
+  const setPinOrder = useGame((s) => s.setPinOrder);
+  const pinOrder = useGame((s) => s.pinOrder);
+  /** premium adds one slot; the cap follows the subscription, not a setting */
+  const premiumUntil = useGame((s) => s.premiumUntil);
+  const cap = pinCap(premiumUntil);
   const { flush: flushInventory } = useGiftInbox();
   const giftItem = useGame((s) => s.giftItem);
-  const upgradeItemModel = useGame((s) => s.upgradeItemModel);
-  const loseItemOnUpgrade = useGame((s) => s.loseItemOnUpgrade);
-  /** owner-granted luck: models use the same multiplier as the wheel */
-  const upgradeLuck = useGame((s) => s.admin.upgradeLuck);
+  const guaranteedUpgrade = useGame((s) => s.guaranteedUpgrade);
+  const giftUpgradesEnabled = useGame((s) => s.admin.giftUpgradesEnabled);
+  const stars = useGame((s) => s.stars);
   const toast = useGame((s) => s.toast);
   const profile = useGame((s) => s.profile);
-  const setMainUsername = useGame((s) => s.setMainUsername);
-  const setCollectibleUsername = useGame((s) => s.setCollectibleUsername);
-  const sellUsername = useGame((s) => s.sellUsername);
+  const setMainNumber = useGame((s) => s.setMainNumber);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("new");
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
-  const [band, setBand] = useState<ModelBand | "all">("all");
-  const [modelTargetId, setModelTargetId] = useState<string | null>(null);
 
   // ---- gift recipient picker ----
   const onlineUserId = useGame((s) => s.onlineUserId);
@@ -118,13 +123,175 @@ export default function Inventory() {
 
   const active = selected ? inventory.find((i) => i.id === selected) ?? null : null;
   const activeGift = active ? GIFT_BY_ID[active.giftId] ?? null : null;
-  const pinned = useMemo(
-    () =>
-      inventory
-        .filter((i) => i.pinned && GIFT_BY_ID[i.giftId])
-        .sort((a, b) => b.acquiredAt - a.acquiredAt),
-    [inventory],
-  );
+  const pinned = useMemo(() => {
+    const pos = (id: string) => {
+      const at = pinOrder.indexOf(id);
+      // ids missing from the order list (old saves) fall back to newest-first
+      return at < 0 ? Number.MAX_SAFE_INTEGER : at;
+    };
+    return inventory
+      .filter((i) => i.pinned && GIFT_BY_ID[i.giftId])
+      .sort((a, b) => pos(a.id) - pos(b.id) || b.acquiredAt - a.acquiredAt);
+  }, [inventory, pinOrder, GIFT_BY_ID]);
+
+  /* --------------------------------------------------- перетаскивание закрепов */
+
+  /**
+   * Порядок закреплённых — «как в телеге»: зажал карточку и потащил туда, где
+   * она должна стоять. Стор не трогаем на каждом движении пальца, иначе в
+   * историю сохранений полетит десяток промежуточных порядков; работаем с
+   * черновиком и записываем его один раз, на отпускании.
+   *
+   * Тап остаётся тапом: перетаскивание начинается только после смещения на
+   * `PIN_DRAG_SLOP`, поэтому карточка продолжает открывать детали.
+   */
+  const [pinDraft, setPinDraft] = useState<string[] | null>(null);
+  const [draggingPin, setDraggingPin] = useState<string | null>(null);
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const pinDraftRef = useRef<string[] | null>(null);
+  const pinDrag = useRef<{ id: string; pointerId: number; x: number; y: number; moved: boolean } | null>(null);
+  /** после настоящего перетаскивания клик по карточке надо погасить */
+  const pinTapBlocked = useRef(false);
+  /**
+   * Карточка, которую ведут пальцем.
+   *
+   * Позиция НЕ живёт в состоянии React: pointermove приходит до сотни раз в
+   * секунду, и setState на каждое движение перерисовывал бы всю страницу —
+   * отсюда и были лаги. Поэтому координаты пишутся прямо в узел (transform,
+   * только композитор, без layout), а состояние меняется лишь когда меняется
+   * сам порядок.
+   */
+  const [pinGhost, setPinGhost] = useState<{ giftId: string; w: number; h: number } | null>(null);
+  const ghostRef = useRef<HTMLDivElement | null>(null);
+  const ghostPos = useRef({ x: 0, y: 0 });
+  /** при захвате точки плиток фиксируются — их не надо мерить на каждом движении */
+  const slotRects = useRef<{ left: number; right: number; top: number; bottom: number }[]>([]);
+  const pinGrab = useRef({ dx: 0, dy: 0 });
+
+  const paintGhost = useCallback(() => {
+    const el = ghostRef.current;
+    if (!el) return;
+    el.style.transform = `translate3d(${ghostPos.current.x}px, ${ghostPos.current.y}px, 0)`;
+  }, []);
+
+  // первое положение — до кадра отрисовки, иначе призрак мигнёт в левом углу
+  useLayoutEffect(paintGhost, [pinGhost, paintGhost]);
+
+  const setDraft = (next: string[] | null) => {
+    pinDraftRef.current = next;
+    setPinDraft(next);
+  };
+
+  /** Что показать в полосе: черновик, если он есть, иначе порядок из стора. */
+  const pinnedView = useMemo(() => {
+    if (!pinDraft) return pinned;
+    const byId = new Map(pinned.map((i) => [i.id, i]));
+    const out = pinDraft.map((id) => byId.get(id)).filter((i): i is (typeof pinned)[number] => Boolean(i));
+    // закреп, которого нет в черновике, не выбрасываем — дописываем в конец
+    for (const item of pinned) if (!out.includes(item)) out.push(item);
+    return out;
+  }, [pinned, pinDraft]);
+
+  /** Ближайшая к пальцу плитка — по заранее снятой геометрии сетки. */
+  const pinIndexAt = useCallback((x: number, y: number) => {
+    const rects = slotRects.current;
+    if (!rects.length) return -1;
+    let best = -1;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      // расстояние до прямоугольника, а не до центра: между плитками есть
+      // зазоры, и попадать в них тоже надо
+      const dx = Math.max(r.left - x, 0, x - r.right);
+      const dy = Math.max(r.top - y, 0, y - r.bottom);
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best;
+  }, []);
+
+  const pinDragStart = (e: React.PointerEvent<HTMLElement>, id: string) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pinDrag.current = { id, pointerId: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+  };
+
+  const pinDragMove = (e: React.PointerEvent<HTMLElement>) => {
+    const drag = pinDrag.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+
+    if (!drag.moved) {
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
+      if (dx * dx + dy * dy < PIN_DRAG_SLOP * PIN_DRAG_SLOP) return;
+      drag.moved = true;
+
+      // сетка снимается один раз: пока палец едет, слоты стоят на месте,
+      // меняется только то, какая карточка в каком слоте
+      const nodes = stripRef.current?.querySelectorAll<HTMLElement>("[data-pin-id]");
+      slotRects.current = Array.from(nodes ?? []).map((n) => {
+        const r = n.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      });
+
+      const rect = e.currentTarget.getBoundingClientRect();
+      // запоминаем, за какую точку карточки взялись, чтобы она не прыгнула под палец
+      pinGrab.current = { dx: drag.x - rect.left, dy: drag.y - rect.top };
+      ghostPos.current = { x: rect.left, y: rect.top };
+
+      setDraft(pinned.map((i) => i.id));
+      setDraggingPin(drag.id);
+      setPinGhost({
+        giftId: pinned.find((i) => i.id === drag.id)?.giftId ?? "",
+        w: rect.width,
+        h: rect.height,
+      });
+    }
+
+    ghostPos.current = { x: e.clientX - pinGrab.current.dx, y: e.clientY - pinGrab.current.dy };
+    paintGhost();
+
+    const target = pinIndexAt(e.clientX, e.clientY);
+    if (target < 0) return;
+    const base = pinDraftRef.current ?? pinned.map((i) => i.id);
+    const from = base.indexOf(drag.id);
+    if (from < 0 || from === target) return;
+    const next = [...base];
+    next.splice(from, 1);
+    next.splice(target, 0, drag.id);
+    setDraft(next);
+  };
+
+  const pinDragEnd = (e: React.PointerEvent<HTMLElement>) => {
+    const drag = pinDrag.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    pinDrag.current = null;
+    setDraggingPin(null);
+    setPinGhost(null);
+    if (drag.moved) {
+      const draft = pinDraftRef.current;
+      if (draft) setPinOrder(draft);
+      pinTapBlocked.current = true;
+      // защита от «клик после drag» в браузерах, где click всё же приходит
+      window.setTimeout(() => {
+        pinTapBlocked.current = false;
+      }, 250);
+    }
+    setDraft(null);
+  };
+
+  /** Клавиатура: та же перестановка, но стрелками — как обычная кнопка. */
+  const pinKeyMove = (e: React.KeyboardEvent<HTMLElement>, id: string) => {
+    const back = e.key === "ArrowUp" || e.key === "ArrowLeft";
+    const fwd = e.key === "ArrowDown" || e.key === "ArrowRight";
+    if (!back && !fwd) return;
+    e.preventDefault();
+    e.stopPropagation();
+    movePin(id, back ? -1 : 1);
+  };
 
   /** Every nicer model of the selected gift, cheapest first — owner-made
    *  models included, so a freshly imported folder works right away. */
@@ -133,50 +300,51 @@ export default function Inventory() {
     [activeGift, allGifts],
   );
 
-  const bandTargets = useMemo(() => {
-    if (!activeGift || band === "all") return targets;
-    const cfg = MODEL_BANDS.find((b) => b.id === band);
-    if (!cfg) return targets;
-    return targets.filter((t) => t.stars >= activeGift.stars * cfg.mult);
-  }, [targets, band, activeGift]);
+  /** cheapest and priciest affordable guaranteed drops, for the «цена» hint */
+  const guaranteeRange = useMemo(() => {
+    if (!activeGift) return { cheapest: 0, reach: 0 };
+    const costs = targets
+      .filter((t) => t.stars > activeGift.stars)
+      .map((t) => guaranteePrice(t.stars - activeGift.stars));
+    if (!costs.length) return { cheapest: 0, reach: 0 };
+    const cheapest = Math.min(...costs);
+    const reach = costs.filter((c) => c <= stars).reduce((max, c) => Math.max(max, c), 0);
+    return { cheapest, reach };
+  }, [activeGift, targets, stars]);
 
-  const target: Gift | null =
-    (modelTargetId && targets.find((t) => t.id === modelTargetId)) || bandTargets[0] || null;
-
-  const targetChance =
-    activeGift && target
-      // model odds are capped at 95: a boosted roll should read as «почти
-      // наверняка», never as a guaranteed free upgrade
-      ? boostedChance(modelUpgradeChance(activeGift, target), upgradeLuck, 95)
-      : 0;
-
-  const openModelUpgrade = () => {
-    setBand("all");
-    setModelTargetId(targets[0]?.id ?? null);
-    setModelOpen(true);
-  };
-
-  const doModelUpgrade = () => {
-    if (!active || !activeGift || !target) return;
-    const won = chance(targetChance);
-    if (won) {
-      upgradeItemModel(active.id, target.id);
+  /**
+   * 100%-успешный апгрейд: модель всегда улучшается, но какая именно —
+   * решает RNG. Платим только разницу в цене той модели, что выпала.
+   */
+  const doGuaranteedUpgrade = () => {
+    if (!active) return;
+    const res = guaranteedUpgrade(active.id);
+    if (res.ok) {
+      const got = res.targetGiftId ? GIFT_BY_ID[res.targetGiftId] ?? null : null;
       toast({
         kind: "success",
-        title: `${activeGift.name}: ${target.variant}`,
-        message: `Модель улучшена · ${target.stars.toLocaleString("ru-RU")} ★`,
+        title: got ? `${got.name}: ${got.variant}` : "Модель улучшена",
+        message: `Выпала случайная модель · −${(res.cost ?? 0).toLocaleString("ru-RU")} ★`,
       });
+      setModelOpen(false);
       setSelected(null);
-    } else {
-      loseItemOnUpgrade(active.id);
-      toast({
-        kind: "error",
-        title: "Модель не выпала",
-        message: "Предмет сгорел — так работает честный RNG",
-      });
-      setSelected(null);
+      return;
     }
-    setModelOpen(false);
+    if (res.reason === "stars") {
+      toast({
+        kind: "info",
+        title: `Нужно ${(res.cost ?? 0).toLocaleString("ru-RU")} ★`,
+        message: `У тебя ${stars.toLocaleString("ru-RU")} ★ · самая дешёвая модель стоит ${(res.cost ?? 0).toLocaleString("ru-RU")} ★`,
+      });
+      return;
+    }
+    if (res.reason === "top") {
+      toast({ kind: "info", title: "Это топ-модель", message: "Выше уже некуда" });
+      return;
+    }
+    if (res.reason === "disabled") {
+      toast({ kind: "info", title: "Улучшения выключены", message: "Владелец закрыл апгрейд моделей" });
+    }
   };
 
   const openGiftPicker = () => {
@@ -239,11 +407,11 @@ export default function Inventory() {
   const doTogglePin = (id: string) => {
     const item = inventory.find((i) => i.id === id);
     if (!item) return;
-    if (!item.pinned && pinned.length >= MAX_PINNED) {
+    if (!item.pinned && pinned.length >= cap) {
       toast({
         kind: "info",
-        title: "Закреплено уже 3",
-        message: `Больше ${MAX_PINNED} не закрепить — открепи один`,
+        title: `Закреплено уже ${cap}`,
+        message: `Больше ${cap} не закрепить — открепи один${cap > 3 ? "" : " или подключи Premium"}`,
       });
       return;
     }
@@ -258,9 +426,6 @@ export default function Inventory() {
       message: nowPinned ? "Закреплённые висят сверху и видны в профиле" : undefined,
     });
   };
-
-  const usernames = profile.purchasedUsernames;
-  const collectibleOptions = usernames.filter((u) => u !== profile.nickname);
 
   return (
     <div className="space-y-4">
@@ -282,195 +447,181 @@ export default function Inventory() {
         </Button>
       </header>
 
-      {/* 500★ random-username lootbox */}
-      <UsernameLootbox />
-
-      {/* profile usernames */}
-      <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.05] to-transparent p-4 backdrop-blur-xl">
-        <div className="pointer-events-none absolute -right-10 -top-12 size-40 rounded-full bg-violet/15 blur-[70px]" />
-        <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      {/* Свой номер: купленные в TON-маркете номера переключаются здесь.
+          Ники живут в настройках профиля — им там и место. */}
+      <section className="relative overflow-hidden rounded-3xl border border-white/8 bg-gradient-to-br from-white/[0.05] to-transparent p-4 backdrop-blur-sm">
+        <div className="pointer-events-none absolute -right-10 -top-12 size-40 rounded-full bg-[#4aa8ff]/15 blur-[70px]" />
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/30">Основной юзернейм</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <p className="font-display text-xl font-black tracking-tight">@{profile.nickname}</p>
-              {profile.badges.map((b) => {
-                const badge = BADGE_BY_ID[b];
-                if (!badge) return null;
-                return (
-                  <span
-                    key={b}
-                    className="rounded-full border px-2 py-0.5 text-[9.5px] font-bold"
-                    style={{ color: badge.color, borderColor: `${badge.color}55`, background: `${badge.color}18` }}
-                  >
-                    {badge.label}
-                  </span>
-                );
-              })}
-            </div>
-            {profile.collectibleUsername && (
-              <p className="mt-1 text-[12px] font-bold text-white/45">
-                второй ник: <span className="text-violet">@{profile.collectibleUsername}</span>
-              </p>
-            )}
-            {profile.phoneNumber && (
-              <p className="mt-0.5 text-[11px] tabular-nums text-white/30">{profile.phoneNumber}</p>
-            )}
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/30">
+              Мой номер
+            </p>
+            <p className="mt-1 font-display text-lg font-black tabular-nums tracking-tight">
+              {profile.anonymousNumber && profile.phoneNumber ? profile.phoneNumber : "обычный номер"}
+            </p>
+            <p className="mt-0.5 text-[10.5px] text-white/25">
+              {profile.purchasedNumbers.length > 0
+                ? `${profile.purchasedNumbers.length} своих · переключение мгновенное`
+                : "номер покупается в TON-маркете за TON"}
+            </p>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <label className="block">
+          {profile.purchasedNumbers.length > 0 ? (
+            <label className="block w-full sm:w-auto">
               <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
-                Переключить основной
+                Переключить
               </span>
               <select
-                value={profile.nickname}
-                onChange={(e) => setMainUsername(e.target.value)}
-                disabled={!usernames.length}
-                className="w-full min-w-[150px] rounded-xl border border-white/10 bg-black/40 px-2.5 py-2 text-[12px] font-bold text-white/80 outline-none disabled:opacity-40"
+                value={profile.anonymousNumber ? profile.phoneNumber ?? "" : ""}
+                onChange={(e) => setMainNumber(e.target.value || null)}
+                className="w-full min-w-[170px] rounded-xl border border-white/10 bg-black/40 px-2.5 py-2 text-[12px] font-bold tabular-nums text-white/80 outline-none transition-colors focus:border-neon/40"
               >
-                {usernames.length === 0 && <option value={profile.nickname}>@{profile.nickname}</option>}
-                {usernames.map((u) => (
-                  <option key={u} value={u}>
-                    @{u}
+                <option value="">обычный</option>
+                {profile.purchasedNumbers.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
                   </option>
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/30">
-                Второй (коллекционный)
-              </span>
-              <select
-                value={profile.collectibleUsername ?? ""}
-                onChange={(e) => setCollectibleUsername(e.target.value || null)}
-                disabled={!collectibleOptions.length}
-                className="w-full min-w-[150px] rounded-xl border border-white/10 bg-black/40 px-2.5 py-2 text-[12px] font-bold text-violet outline-none disabled:opacity-40"
-              >
-                <option value="">— нет —</option>
-                {collectibleOptions.map((u) => (
-                  <option key={u} value={u}>
-                    @{u}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
-        {usernames.length === 0 && (
-          <p className="relative mt-2 text-[11px] text-white/30">
-            Купи юзернейм в{" "}
-            <Link to="/app/shop" className="font-bold text-neon hover:underline">
-              магазине
+          ) : (
+            <Link to="/app/ton">
+              <Button size="sm" variant="ghost">
+                В TON-маркет
+              </Button>
             </Link>
-            , чтобы переключаться между никами. Второй ник — отдельный слот, как в Telegram.
-          </p>
-        )}
+          )}
+        </div>
       </section>
-
-      {/* owned usernames — sell back */}
-      {usernames.length > 0 && (
-        <section className="rounded-3xl border border-white/8 bg-white/[0.025] p-4">
-          <div className="mb-2 flex items-end justify-between">
-            <h2 className="text-[13.5px] font-extrabold tracking-tight">Мои юзернеймы</h2>
-            <span className="text-[10.5px] text-white/25">{usernames.length} шт.</span>
-          </div>
-          <div className="space-y-2">
-            {usernames.map((u) => {
-              const active = u === profile.nickname;
-              const shopPrice = SHOP_USERNAMES.find((s) => s.username === u)?.price;
-              const value = Math.round((shopPrice ?? 800) * 0.6);
-              return (
-                <div
-                  key={u}
-                  className={`flex items-center justify-between gap-3 rounded-2xl border px-3 py-2.5 ${
-                    active ? "border-neon/30 bg-neon/[0.05]" : "border-white/8 bg-black/30"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-extrabold">@{u}</p>
-                    <p className="text-[10.5px] text-white/30">
-                      {active ? "активный ник" : profile.collectibleUsername === u ? "второй ник" : "свободен"}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="flex items-center gap-1 text-[11.5px] font-bold tabular-nums text-neon">
-                      <StarIcon className="size-3" /> {value.toLocaleString("ru-RU")}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      disabled={active}
-                      onClick={() => {
-                        if (sellUsername(u, value)) {
-                          toast({ kind: "success", title: `@${u} продан`, message: `+${value.toLocaleString("ru-RU")} ★` });
-                        }
-                      }}
-                    >
-                      {active ? "В игре" : "Продать"}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <p className="mt-2 text-[10px] text-white/25">Продать можно любой ник, кроме активного. Выплата — 60% цены.</p>
-        </section>
-      )}
 
       {/* pinned gifts — kept at the top like Telegram's pinned gifts */}
       {pinned.length > 0 && (
         <section className="rounded-3xl border border-neon/20 bg-neon/[0.04] p-3">
-          <div className="mb-2 flex items-end justify-between">
-            <h2 className="flex items-center gap-1.5 text-[12px] font-extrabold tracking-tight text-neon">
-              <PinIcon className="size-3.5" /> Закреплённые
-            </h2>
-            <span className="text-[10.5px] text-white/25">
-              {pinned.length} / {MAX_PINNED}
+          <div className="mb-2 flex items-end justify-between gap-2">
+            <div>
+              <h2 className="flex items-center gap-1.5 text-[12px] font-extrabold tracking-tight text-neon">
+                <PinIcon className="size-3.5" /> Закреплённые
+              </h2>
+              <p className="mt-0.5 text-[10px] text-white/30">
+                Зажми карточку и перетащи — порядок сохранится
+              </p>
+            </div>
+            <span className="shrink-0 text-[10.5px] text-white/25">
+              {pinned.length} / {cap}
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-            {pinned.map((item) => {
+          <div ref={stripRef} className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {pinnedView.map((item, idx) => {
               const gift = GIFT_BY_ID[item.giftId];
               const meta = RARITY_META[gift.rarity];
+              const isDragging = draggingPin === item.id;
               return (
-                <button
+                <motion.div
                   key={item.id}
-                  onClick={() => setSelected(item.id)}
-                  className={`group relative flex items-center gap-2.5 overflow-hidden rounded-2xl border bg-black/30 p-2 text-left transition-colors hover:border-white/25 ${meta.ring}`}
+                  layout
+                  transition={SPRING_SOFT}
+                  data-pin-id={item.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-grabbed={isDragging}
+                  onPointerDown={(e) => pinDragStart(e, item.id)}
+                  onPointerMove={pinDragMove}
+                  onPointerUp={pinDragEnd}
+                  onPointerCancel={pinDragEnd}
+                  onClick={() => {
+                    // после перетаскивания клик не должен открывать детали
+                    if (pinTapBlocked.current) return;
+                    setSelected(item.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelected(item.id);
+                      return;
+                    }
+                    pinKeyMove(e, item.id);
+                  }}
+                  style={{ touchAction: "none" }}
+                  className={[
+                    "group relative flex cursor-grab select-none items-center gap-2 overflow-hidden rounded-2xl border bg-black/30 p-2 text-left active:cursor-grabbing",
+                    meta.ring,
+                    isDragging
+                      ? // «дырка» на месте карточки: сама карточка уехала под палец
+                        "border-dashed border-neon/60 bg-neon/[0.06] opacity-40"
+                      : "hover:border-white/25",
+                  ].join(" ")}
                 >
+                  {/* «держалка» — показывает, что карточку можно взять */}
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-1 top-1 text-[9px] leading-none text-white/25"
+                  >
+                    ⠿
+                  </span>
+
                   <GiftArt gift={gift} size={40} rounded="rounded-xl" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[11.5px] font-extrabold">{gift.name}</p>
+                    <p className="truncate pr-2 text-[11.5px] font-extrabold">{gift.name}</p>
                     <p className="flex items-center gap-0.5 text-[11px] font-bold tabular-nums text-neon/90">
                       {gift.stars.toLocaleString("ru-RU")}
                       <StarIcon className="size-2.5" />
                     </p>
+                    <p className="mt-0.5 text-[9.5px] font-bold text-white/25">
+                      место {idx + 1}
+                    </p>
                   </div>
-                  <span
-                    role="button"
-                    tabIndex={0}
+
+                  <button
+                    type="button"
                     title="Открепить"
+                    aria-label="Открепить подарок"
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
                       togglePin(item.id);
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        togglePin(item.id);
-                      }
-                    }}
                     className="grid size-6 shrink-0 place-items-center rounded-full bg-neon/20 text-neon hover:bg-neon/30"
                   >
                     <PinIcon className="size-3" />
-                  </span>
-                </button>
+                  </button>
+                </motion.div>
               );
             })}
           </div>
         </section>
       )}
+
+      {/* карточка, которую ведут пальцем — поверх всего, чтобы не залипала в сетке */}
+      {pinGhost &&
+        GIFT_BY_ID[pinGhost.giftId] &&
+        createPortal(
+          <div
+            ref={ghostRef}
+            style={{
+              position: "fixed",
+              left: 0,
+              top: 0,
+              width: pinGhost.w,
+              height: pinGhost.h,
+              zIndex: 90,
+              pointerEvents: "none",
+              willChange: "transform",
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1.06, rotate: -2 }}
+              transition={SPRING_SNAPPY}
+              className="flex h-full w-full items-center gap-2 rounded-2xl border border-neon/60 bg-[#12131a] p-2 shadow-[0_18px_40px_-18px_rgba(0,0,0,0.9)]"
+            >
+              <GiftArt gift={GIFT_BY_ID[pinGhost.giftId]} size={40} rounded="rounded-xl" />
+              <p className="truncate text-[11.5px] font-extrabold">
+                {GIFT_BY_ID[pinGhost.giftId].name}
+              </p>
+            </motion.div>
+          </div>,
+          document.body,
+        )}
 
       {/* filters */}
       <div className="flex flex-col gap-2.5 rounded-2xl border border-white/8 bg-white/[0.025] p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -674,15 +825,19 @@ export default function Inventory() {
                   {active.pinned ? "Открепить" : "Закрепить"}
                 </Button>
 
-                {targets.length > 0 ? (
+                {!giftUpgradesEnabled ? (
+                  <p className="mt-2 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-center text-[10.5px] text-white/30">
+                    улучшение моделей временно закрыто
+                  </p>
+                ) : targets.length > 0 ? (
                   <Button
                     full
                     variant="violet"
                     className="mt-2"
-                    onClick={openModelUpgrade}
+                    onClick={() => setModelOpen(true)}
                     disabled={modelOpen}
                   >
-                    ✨ Улучшить модель · {targets.length} вариантов
+                    🎲 Улучшить модель · гарантированно
                   </Button>
                 ) : (
                   <p className="mt-2 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-center text-[10.5px] text-white/30">
@@ -697,10 +852,15 @@ export default function Inventory() {
                 </Link>
 
                 {modelOpen && targets.length > 0 && (
-                  <div className="mt-3 rounded-2xl border border-violet/25 bg-violet/[0.06] p-3">
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={SPRING_SOFT}
+                    className="mt-3 rounded-2xl border border-neon/25 bg-neon/[0.05] p-3"
+                  >
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet/70">
-                        Другая модель
+                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-neon/80">
+                        Апгрейд модели · 100%
                       </p>
                       <button
                         onClick={() => setModelOpen(false)}
@@ -710,76 +870,52 @@ export default function Inventory() {
                       </button>
                     </div>
 
-                    <div className="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar">
-                      <button
-                        onClick={() => {
-                          setBand("all");
-                          setModelTargetId(targets[0]?.id ?? null);
-                        }}
-                        className={`shrink-0 rounded-lg px-2 py-1 text-[10.5px] font-bold ${
-                          band === "all" ? "bg-white/12 text-white" : "text-white/35 hover:text-white/70"
-                        }`}
-                      >
-                        все
-                      </button>
-                      {MODEL_BANDS.map((b) => (
-                        <button
-                          key={b.id}
-                          onClick={() => {
-                            setBand(b.id);
-                            setModelTargetId(null);
-                          }}
-                          className={`shrink-0 rounded-lg px-2 py-1 text-[10.5px] font-bold ${
-                            band === b.id ? "bg-white/12 text-white" : "text-white/35 hover:text-white/70"
-                          }`}
-                        >
-                          {b.label}
-                        </button>
-                      ))}
-                    </div>
+                    <p className="mt-1.5 text-[10.5px] leading-relaxed text-white/45">
+                      Модель улучшается <span className="font-bold text-white/70">всегда</span> — провала
+                      нет, предмет не сгорает. А вот какая именно выпадет, решает случай: близкие
+                      варианты выпадают чаще, дорогие реже. Выбрать конкретную нельзя.
+                    </p>
 
-                    <div className="mt-2 grid max-h-44 grid-cols-3 gap-1.5 overflow-y-auto">
-                      {bandTargets.map((t) => {
-                        const on = target?.id === t.id;
-                        return (
-                          <button
-                            key={t.id}
-                            onClick={() => setModelTargetId(t.id)}
-                            className={`rounded-xl border p-1.5 text-center transition-colors ${
-                              on
-                                ? "border-violet/60 bg-violet/15"
-                                : "border-white/8 bg-white/[0.02] hover:border-white/20"
-                            }`}
-                          >
-                            <GiftArt gift={t} size={34} rounded="rounded-md" />
-                            <p className="mt-1 truncate text-[9px] font-bold text-white/70">{t.variant}</p>
-                            <p className="text-[9px] tabular-nums text-neon/80">{t.stars.toLocaleString("ru-RU")}</p>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {target && (
-                      <div className="mt-2.5 flex items-center justify-between rounded-xl border border-white/8 bg-black/30 px-3 py-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-[11px] font-extrabold">{target.variant}</p>
-                          <p className="text-[9.5px] tabular-nums text-white/35">
-                            {activeGift.stars.toLocaleString("ru-RU")} → {target.stars.toLocaleString("ru-RU")} ★
-                          </p>
-                        </div>
-                        <p className="text-[14px] font-black tabular-nums text-violet">
-                          {targetChance.toFixed(2)}%
+                    <div className="mt-2 flex items-center justify-between rounded-xl border border-white/8 bg-black/30 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-[11px] font-extrabold">
+                          {activeGift.name} · {activeGift.variant}
+                        </p>
+                        <p className="text-[9.5px] tabular-nums text-white/35">
+                          сейчас {activeGift.stars.toLocaleString("ru-RU")} ★ · выше есть{" "}
+                          {targets.length}
                         </p>
                       </div>
-                    )}
+                      <p className="shrink-0 text-[15px] font-black tabular-nums text-neon">100%</p>
+                    </div>
 
-                    <Button full className="mt-2" size="sm" onClick={doModelUpgrade} disabled={!target}>
-                      Улучшить модель
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-white/35">
+                      <span>цена — разница до выпавшей модели</span>
+                      <span className="tabular-nums">
+                        от {guaranteeRange.cheapest.toLocaleString("ru-RU")} ★
+                      </span>
+                    </div>
+
+                    <Button
+                      full
+                      className="mt-2"
+                      size="sm"
+                      onClick={doGuaranteedUpgrade}
+                      disabled={guaranteeRange.cheapest <= 0}
+                    >
+                      🎲 Улучшить · случайная модель
                     </Button>
+
                     <p className="mt-1.5 text-center text-[9.5px] leading-relaxed text-white/25">
-                      При неудаче предмет сгорает — честный взвешенный RNG
+                      {guaranteeRange.reach > 0
+                        ? `Выпадет одна из тех, что по карману: до ${guaranteeRange.reach.toLocaleString(
+                            "ru-RU",
+                          )} ★. Баланс ${stars.toLocaleString("ru-RU")} ★.`
+                        : `Не хватает даже на ближайшую модель — нужно ${guaranteeRange.cheapest.toLocaleString(
+                            "ru-RU",
+                          )} ★.`}
                     </p>
-                  </div>
+                  </motion.div>
                 )}
               </div>
             </motion.div>
