@@ -13,6 +13,7 @@ import { useStatsSync } from "./lib/useStatsSync";
 import { useAccountMirror } from "./lib/useAccountMirror";
 import { useGiftInbox } from "./lib/useGiftInbox";
 import { useBanGuard } from "./lib/useBanGuard";
+import { fetchGiftAppConfig } from "./lib/appConfig";
 
 import { useAuth } from "./lib/players";
 
@@ -80,6 +81,20 @@ export default function App() {
   useEffect(() => {
     applySkin(skin);
   }, [skin]);
+
+  // Глобальные настройки магазина подарков (общие для всех): владелец
+  // закрывает базовые подарки — ограничение должно действовать у всех.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const cfg = await fetchGiftAppConfig();
+      if (!alive || !cfg) return;
+      useGame.getState().setAdmin(cfg);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // "Анимации" switch: one class on <html> freezes every decorative motion
   const reduceMotion = useGame((s) => s.settings.reduceMotion);

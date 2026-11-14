@@ -50,8 +50,10 @@ export function GiftShopDesk() {
           <button
             key={row.key}
             onClick={() => {
-              setAdmin({ [row.key]: !on });
-              logAdmin("магазин", `${row.title}: ${!on ? "включено" : "выключено"}`);
+              const next = !on;
+              setAdmin({ [row.key]: next });
+              logAdmin("магазин", `${row.title}: ${next ? "включено" : "выключено"}`);
+              void saveGiftAppConfig({ [row.key]: next });
             }}
             className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
               on ? "border-neon/35 bg-neon/[0.08]" : "border-white/8 bg-black/30 hover:bg-white/[0.04]"
@@ -125,11 +127,15 @@ function UpgradeOnlyDesk() {
   }, [gifts, q, upgradeOnly]);
 
   const banned = new Set(upgradeOnly);
+  const persist = (next: string[]) => {
+    setAdmin({ upgradeOnly: next });
+    void saveGiftAppConfig({ upgradeOnly: next });
+  };
   const toggle = (slug: string) => {
     const next = banned.has(slug)
       ? upgradeOnly.filter((s) => s !== slug)
       : [...upgradeOnly, slug];
-    setAdmin({ upgradeOnly: next });
+    persist(next);
     logAdmin("магазин", `только апгрейд: ${slug} — ${banned.has(slug) ? "снято" : "включено"}`);
   };
 
@@ -162,7 +168,8 @@ function UpgradeOnlyDesk() {
             <button
               onClick={() => {
                 const all = gifts.filter((g) => g.kind === "gift").map((g) => g.slug);
-                setAdmin({ upgradeOnly: upgradeOnly.length >= all.length ? [] : all });
+                const next = upgradeOnly.length >= all.length ? [] : all;
+                persist(next);
                 logAdmin(
                   "магазин",
                   upgradeOnly.length >= all.length
