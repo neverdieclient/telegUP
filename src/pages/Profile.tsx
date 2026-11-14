@@ -61,11 +61,11 @@ export default function ProfilePage() {
     [inventory],
   );
 
-  /** сколько подарков уже улучшено — у них есть номер, фон и узор */
+  /** сколько подарков уже улучшено — у них есть номер и фон */
   const upgradedCount = useMemo(
     () =>
       inventory.filter(
-        (i) => typeof i.num === "number" || Boolean(i.bg) || Boolean(i.pattern),
+        (i) => typeof i.num === "number" || Boolean(i.bg),
       ).length,
     [inventory],
   );

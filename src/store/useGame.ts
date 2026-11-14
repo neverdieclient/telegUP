@@ -14,7 +14,6 @@ import { pick, randInt, rollGuarantee, uid } from "../lib/rng";
 import { guaranteeCost } from "../lib/pricing";
 import { rollGiftNumber } from "../lib/giftNumbers";
 import { backgroundOf, rollBackground } from "../data/backgrounds";
-import { patternOf, rollPattern } from "../data/patterns";
 import { getGiftIndex } from "../data/customGifts";
 import { boostState } from "../lib/starBoost";
 import { onBanSignal } from "../lib/banSignal";
@@ -75,10 +74,10 @@ function takeNumber(
 }
 
 /**
- * Что подарок получает при улучшении: номер, фон и узор, как в Телеграме.
+ * Что подарок получает при улучшении: номер и фон, как в Телеграме.
  *
- * Номер уникален внутри коллекции, а фон и узор выпадают чистым случаем из
- * всех вариантов — делений на «редкий/эпический» у них нет.
+ * Номер уникален внутри коллекции, а фон выпадает чистым случаем из всех
+ * вариантов.
  */
 function upgradedLook(book: Record<string, number[]> | undefined, slug: string) {
   const { numberBook, num } = takeNumber(book, slug);
@@ -86,7 +85,6 @@ function upgradedLook(book: Record<string, number[]> | undefined, slug: string) 
     numberBook,
     num,
     bg: rollBackground().id,
-    pattern: rollPattern().id,
   };
 }
 
@@ -202,8 +200,6 @@ export type InventoryItem = {
   num?: number;
   /** id фона из `data/backgrounds`. Тоже появляется только после улучшения. */
   bg?: string;
-  /** id узора из `data/patterns` — тиснение поверх фона, как в Телеграме. */
-  pattern?: string;
 };
 
 /** Telegram shows a short row of pinned gifts; three fits our grid. */
@@ -1257,7 +1253,7 @@ export const useGame = create<State>()(
         const gift = giftOf(giftId);
         // улучшенный подарок — это модель коллекции (её выдают из кейса,
         // покупают в маркете, забирают с аукциона) или то, что только что вышло
-        // из апгрейда. Ему и только ему достаётся номер коллекции, фон и узор,
+        // из апгрейда. Ему и только ему достаётся номер коллекции и фон,
         // как в Телеграме. Базовый подарок `gift-<slug>` остаётся без них.
         const improved = source === "upgrade" || gift?.kind === "model";
         const look =
@@ -1267,7 +1263,7 @@ export const useGame = create<State>()(
           giftId,
           acquiredAt: Date.now(),
           source,
-          ...(look ? { num: look.num, bg: look.bg, pattern: look.pattern } : {}),
+          ...(look ? { num: look.num, bg: look.bg } : {}),
         };
         set((s) => ({
           inventory: [item, ...s.inventory],
@@ -1389,8 +1385,8 @@ export const useGame = create<State>()(
         if (!source) return null;
         const target = giftOf(targetGiftId);
         if (!target || target.slug !== giftOf(source.giftId)?.slug) return null;
-        // улучшенный подарок получает номер коллекции, фон и узор — как в Телеграме
-        const { numberBook, num, bg, pattern } = upgradedLook(get().numberBook, target.slug);
+        // улучшенный подарок получает номер коллекции и фон — как в Телеграме
+        const { numberBook, num, bg } = upgradedLook(get().numberBook, target.slug);
         const next: InventoryItem = {
           id: uid("inv"),
           giftId: targetGiftId,
@@ -1400,7 +1396,6 @@ export const useGame = create<State>()(
           source: source.source === "combo" ? "combo" : "upgrade",
           num,
           bg,
-          pattern,
         };
         set((s) => ({
           inventory: [next, ...s.inventory.filter((i) => i.id !== instanceId)],
@@ -1455,9 +1450,9 @@ export const useGame = create<State>()(
         }
         const target = drawn.gift;
         const cost = drawn.cost;
-        // номер коллекции + случайный фон и узор: базовый подарок их не имеет,
+        // номер коллекции + случайный фон: базовый подарок их не имеет,
         // улучшенный — имеет всегда
-        const { numberBook, num, bg, pattern } = upgradedLook(s.numberBook, from.slug);
+        const { numberBook, num, bg } = upgradedLook(s.numberBook, from.slug);
         const next: InventoryItem = {
           id: uid("inv"),
           giftId: target.id,
@@ -1465,7 +1460,6 @@ export const useGame = create<State>()(
           source: item.source === "combo" ? "combo" : "upgrade",
           num,
           bg,
-          pattern,
         };
         set((st) => ({
           stars: st.stars - cost,
@@ -2173,12 +2167,9 @@ export const useGame = create<State>()(
             ? restAdmin.giftUpgradesEnabled
             : initialState.admin.giftUpgradesEnabled;
 
-        // ── номера, фоны и узоры ───────────────────────────────────────────
-        // В Телеграме номер, фон и узор есть только у улучшенного подарка, у
-        // базового их нет. Сохранения до этой версии о них не знали, поэтому
-        // досоздаём их здесь: номер — из книги номеров коллекции (он больше не
-        // повторится), фон и узор — случайные. Так старая коллекция выглядит
-        // так же, как только что улучшенная.
+        // ── номера и фоны ──────────────────────────────────────────────────
+        // Номер и фон есть только у улучшенного подарка, у базового их нет.
+        // Узоры убраны — поле `pattern` чистится у всех предметов.
         const numberBook: Record<string, number[]> = {};
         for (const [slug, list] of Object.entries(
           (s.numberBook ?? {}) as Record<string, unknown>,
@@ -2193,40 +2184,30 @@ export const useGame = create<State>()(
           // апгрейда; только у него есть номер и фон
           const upgraded = gift?.kind === "model" || item.source === "upgrade";
           if (!upgraded) {
-            // базовый подарок номера, фона и узора не имеет — даже если они
-            // остались от старого сохранения
-            if (
-              item.num === undefined &&
-              item.bg === undefined &&
-              item.pattern === undefined
-            )
-              return item;
-            const plain = { ...item };
+            // базовый подарок номера и фона не имеет — даже если они остались
+            // от старого сохранения; узор тоже убираем
+            if (item.num === undefined && item.bg === undefined && !("pattern" in item)) return item;
+            const plain = { ...item } as InventoryItem & { pattern?: string };
             delete plain.num;
             delete plain.bg;
             delete plain.pattern;
-            return plain;
+            return plain as InventoryItem;
           }
-          if (
-            typeof item.num === "number" &&
-            backgroundOf(item.bg) &&
-            patternOf(item.pattern)
-          )
-            return item;
-          const taken =
-            typeof item.num === "number"
-              ? null
-              : takeNumber(numberBook, gift ? gift.slug : "custom");
+          const hasNum = typeof item.num === "number";
+          const hasBg = backgroundOf(item.bg);
+          if (hasNum && hasBg && !("pattern" in item)) return item;
+          const taken = hasNum ? null : takeNumber(numberBook, gift ? gift.slug : "custom");
           if (taken) {
             for (const [slug, list] of Object.entries(taken.numberBook)) {
               numberBook[slug] = list;
             }
           }
-          // фон и узор могли остаться от старого набора (полоски, цветы) —
-          // таких больше нет, поэтому берём новые
           const bg = backgroundOf(item.bg) ? item.bg! : rollBackground().id;
-          const pattern = patternOf(item.pattern) ? item.pattern! : rollPattern().id;
-          return { ...item, num: item.num ?? taken?.num, bg, pattern };
+          const next = { ...item, num: item.num ?? taken?.num, bg } as InventoryItem & {
+            pattern?: string;
+          };
+          delete next.pattern;
+          return next as InventoryItem;
         });
 
         return {

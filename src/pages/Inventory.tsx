@@ -4,7 +4,6 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { RARITY_META } from "../data/gifts";
 import { backgroundCss, backgroundOf, backgroundTint } from "../data/backgrounds";
-import { patternLayer, patternOf } from "../data/patterns";
 import { fmtGiftNumber } from "../lib/giftNumbers";
 import { UPGRADE_STARS } from "../lib/pricing";
 import { useAllGifts, useGiftIndex } from "../lib/useCatalog";
@@ -20,30 +19,18 @@ import { Avatar } from "../components/profile/Cosmetics";
 type Sort = "new" | "value" | "name";
 
 /**
- * Подложка подарка: настоящая текстура фона из каталога Telegram, а поверх —
- * узор, как тиснение. Узор — отдельный слой картинки, поэтому все слои живут в
- * одном `background-image`: фон снизу, знак сверху. У базового подарка фона нет,
- * и остаётся прежний тинт.
+ * Подложка подарка: настоящая текстура фона из каталога Telegram. У базового
+ * подарка фона нет — остаётся прежний тинт.
  */
 function lookStyle(
   bg: string | null | undefined,
-  pattern: string | null | undefined,
   tint: string,
-  size = 14,
   scrim = false,
 ): CSSProperties {
   const textured = Boolean(backgroundOf(bg));
-  const layer = patternLayer(pattern, { size });
   const layers: string[] = [];
   const sizes: string[] = [];
   const repeats: string[] = [];
-  if (layer) {
-    // тайл узора: плотнее на маленькой карточке, свободнее в раскрытом виде
-    const tile = Math.round(size * 2.6);
-    layers.push(layer);
-    sizes.push(`${tile}px ${tile}px`);
-    repeats.push("repeat");
-  }
   // на закреплённой плашке поверх фона лежит белый текст: светлые фоны
   // (Platinum, Ivory White) без затемнения сделали бы его нечитаемым
   if (scrim && textured) {
@@ -59,7 +46,8 @@ function lookStyle(
     backgroundSize: sizes.join(", "),
     backgroundRepeat: repeats.join(", "),
     backgroundPosition: "center",
-    backgroundColor: textured ? backgroundTint(bg) : undefined,
+    // тёмная подложка, чтобы на краях скруглений не проступали светлые полосы
+    backgroundColor: backgroundTint(bg, "#121218"),
   };
 }
 
@@ -574,9 +562,9 @@ export default function Inventory() {
                     }
                     pinKeyMove(e, item.id);
                   }}
-                  style={{ touchAction: "none", ...lookStyle(item.bg, item.pattern, gift.tint, 10, true) }}
+                  style={{ touchAction: "none", isolation: "isolate", ...lookStyle(item.bg, gift.tint, true) }}
                   className={[
-                    "group relative flex cursor-grab select-none items-center gap-2 overflow-hidden rounded-2xl border bg-black/30 p-2 text-left active:cursor-grabbing",
+                    "group relative flex cursor-grab select-none items-center gap-2 overflow-hidden rounded-2xl border p-2 text-left active:cursor-grabbing",
                     meta.ring,
                     isDragging
                       ? // «дырка» на месте карточки: сама карточка уехала под палец
@@ -724,7 +712,7 @@ export default function Inventory() {
               >
                 <div
                   className="relative grid h-[108px] place-items-center overflow-hidden"
-                  style={lookStyle(item.bg, item.pattern, gift.tint)}
+                  style={lookStyle(item.bg, gift.tint)}
                 >
                   <GiftArt gift={gift} size={70} rounded="rounded-xl" />
                   {!upgraded && (
@@ -801,7 +789,7 @@ export default function Inventory() {
             >
               <div
                 className="relative grid h-44 place-items-center"
-                style={lookStyle(active.bg, active.pattern, activeGift.tint, 18)}
+                style={lookStyle(active.bg, activeGift.tint)}
               >
                 <GiftArt gift={activeGift} size={104} rounded="rounded-2xl" />
                 <button
@@ -846,18 +834,12 @@ export default function Inventory() {
                   ))}
                 </div>
 
-                {/* у улучшенного подарка, как в Телеграме, видно, что ему
-                    досталось: название фона и узора */}
+                {/* у улучшенного подарка, как в Телеграме, видно название фона */}
                 {backgroundOf(active.bg) && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     <span className="rounded-lg bg-white/[0.055] px-2 py-1 text-[10px] font-bold text-white/40">
                       фон · {backgroundOf(active.bg)!.name}
                     </span>
-                    {patternOf(active.pattern) && (
-                      <span className="rounded-lg bg-white/[0.055] px-2 py-1 text-[10px] font-bold text-white/40">
-                        узор · {patternOf(active.pattern)!.name}
-                      </span>
-                    )}
                   </div>
                 )}
 
