@@ -1255,13 +1255,13 @@ export const useGame = create<State>()(
 
       addItem: (giftId, source) => {
         const gift = giftOf(giftId);
-        // улучшенный подарок получает номер коллекции и случайный фон — как в
-        // Телеграме. Остальные источники (кейс, маркет, набор) дают базовый
-        // подарок без номера и фона.
+        // улучшенный подарок — это модель коллекции (её выдают из кейса,
+        // покупают в маркете, забирают с аукциона) или то, что только что вышло
+        // из апгрейда. Ему и только ему достаётся номер коллекции, фон и узор,
+        // как в Телеграме. Базовый подарок `gift-<slug>` остаётся без них.
+        const improved = source === "upgrade" || gift?.kind === "model";
         const look =
-          source === "upgrade" && gift
-            ? upgradedLook(get().numberBook, gift.slug)
-            : null;
+          improved && gift ? upgradedLook(get().numberBook, gift.slug) : null;
         const item: InventoryItem = {
           id: uid("inv"),
           giftId,

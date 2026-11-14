@@ -31,8 +31,12 @@ trailer/frames-out/
 trailer/frames-update/
 trailer/frames-v15/
 trailer/frames-v20/
+trailer/frames-v21/
 trailer/preview/
 trailer/preview-v20/
+trailer/preview-v21/
+trailer/prev/
+trailer/*.err
 trailer/*.mp4
 trailer/*.webm
 trailer/out/
@@ -43,6 +47,7 @@ trailer/trailer.html
 trailer/update.html
 trailer/v15.html
 trailer/v20.html
+trailer/v21.html
 
 # Editor directories and files
 .vscode/*

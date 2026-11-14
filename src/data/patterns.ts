@@ -66,20 +66,23 @@ export const patternOf = (id: string | undefined | null): GiftPattern | null =>
  */
 export function patternLayer(
   id: string | undefined | null,
-  { size = 14, opacity = 0.18 }: { size?: number; opacity?: number } = {},
+  { size = 14, opacity = 0.12 }: { size?: number; opacity?: number } = {},
 ): string | null {
   const p = patternOf(id);
   if (!p) return null;
+  // U+FE0E — селектор текстового вида. Без него ⚡ ❄ ☀ ☯ рисуются цветными
+  // эмодзи, и узор превращается в наклейки вместо тиснения.
+  const glyph = `${p.glyph}\uFE0E`;
   const tile = Math.round(size * 2.6);
   const x = tile / 2;
   const font = (dy: number, fill: string, alpha: number) =>
     `<text x="${x}" y="${Math.round(tile / 2) + dy}" font-size="${size}" text-anchor="middle" ` +
     `fill="${fill}" fill-opacity="${alpha}" ` +
-    `font-family="Segoe UI Symbol, Noto Sans Symbols, Apple Symbols, sans-serif">${p.glyph}</text>`;
+    `font-family="Segoe UI Symbol, Noto Sans Symbols, Apple Symbols, sans-serif">${glyph}</text>`;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${tile}" height="${tile}" viewBox="0 0 ${tile} ${tile}">` +
-    font(1, "#000000", opacity * 0.9) +
-    font(0, "#ffffff", opacity) +
+    font(1, "#000000", opacity) +
+    font(0, "#ffffff", opacity * 0.8) +
     `</svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }

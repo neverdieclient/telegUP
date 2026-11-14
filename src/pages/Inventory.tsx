@@ -30,10 +30,15 @@ function lookStyle(
   pattern: string | null | undefined,
   tint: string,
   size = 14,
+  scrim = false,
 ): CSSProperties {
   const base = backgroundCss(bg, tint);
   const layer = patternLayer(pattern, { size });
-  return { backgroundImage: layer ? `${layer}, ${base}` : base };
+  const layers = layer ? [layer] : [];
+  // на закреплённой плашке поверх фона лежит белый текст: светлые фоны
+  // (Platinum, Ivory White) без затемнения сделали бы его нечитаемым
+  if (scrim && bg) layers.push("linear-gradient(rgba(9,9,12,0.5), rgba(9,9,12,0.5))");
+  return { backgroundImage: layers.length ? `${layers.join(", ")}, ${base}` : base };
 }
 
 /** Telegram-style pin, used on the cards and the pinned strip. */
@@ -547,7 +552,7 @@ export default function Inventory() {
                     }
                     pinKeyMove(e, item.id);
                   }}
-                  style={{ touchAction: "none", ...lookStyle(item.bg, item.pattern, gift.tint, 10) }}
+                  style={{ touchAction: "none", ...lookStyle(item.bg, item.pattern, gift.tint, 10, true) }}
                   className={[
                     "group relative flex cursor-grab select-none items-center gap-2 overflow-hidden rounded-2xl border bg-black/30 p-2 text-left active:cursor-grabbing",
                     meta.ring,

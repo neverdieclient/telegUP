@@ -374,7 +374,7 @@ export default function Market() {
                   <GiftArt gift={g} size={72} rounded="rounded-xl" />
                 </motion.div>
                 <span className={`absolute left-2 top-2 rounded-md border px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wider ${meta.chip}`}>
-                  {meta.label}
+                  {g.kind === "model" ? "улучшенный" : meta.label}
                 </span>
                 {g.ton > 0 && !lot && (
                   <span className="absolute right-2 top-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[8.5px] font-bold tabular-nums text-white/55 backdrop-blur">
@@ -480,7 +480,7 @@ export default function Market() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="truncate font-display text-xl font-black tracking-tight">{detail.name}</h2>
                     <span className={`rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${RARITY_META[detail.rarity].chip}`}>
-                      {RARITY_META[detail.rarity].label}
+                      {detail.kind === "model" ? "улучшенный" : RARITY_META[detail.rarity].label}
                     </span>
                   </div>
                   <p className="mt-0.5 text-[11.5px] text-white/40">{detail.variant === "Gift" ? "Коллекционный подарок" : detail.variant}</p>
