@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { RARITY_META } from "../data/gifts";
-import { backgroundCss, backgroundOf } from "../data/backgrounds";
+import { backgroundCss, backgroundOf, backgroundTint } from "../data/backgrounds";
 import { patternLayer, patternOf } from "../data/patterns";
 import { fmtGiftNumber } from "../lib/giftNumbers";
 import { UPGRADE_STARS } from "../lib/pricing";
@@ -20,10 +20,10 @@ import { Avatar } from "../components/profile/Cosmetics";
 type Sort = "new" | "value" | "name";
 
 /**
- * Подложка подарка: однотонный «тканевой» цвет, а поверх — узор, как в
- * Телеграме. Узор — отдельный слой картинки, поэтому оба слоя живут в одном
- * `background-image`: фон снизу, тиснение сверху. У базового подарка узора нет,
- * и остаётся только градиент.
+ * Подложка подарка: настоящая текстура фона из каталога Telegram, а поверх —
+ * узор, как тиснение. Узор — отдельный слой картинки, поэтому все слои живут в
+ * одном `background-image`: фон снизу, знак сверху. У базового подарка фона нет,
+ * и остаётся прежний тинт.
  */
 function lookStyle(
   bg: string | null | undefined,
@@ -32,13 +32,35 @@ function lookStyle(
   size = 14,
   scrim = false,
 ): CSSProperties {
-  const base = backgroundCss(bg, tint);
+  const textured = Boolean(backgroundOf(bg));
   const layer = patternLayer(pattern, { size });
-  const layers = layer ? [layer] : [];
+  const layers: string[] = [];
+  const sizes: string[] = [];
+  const repeats: string[] = [];
+  if (layer) {
+    // тайл узора: плотнее на маленькой карточке, свободнее в раскрытом виде
+    const tile = Math.round(size * 2.6);
+    layers.push(layer);
+    sizes.push(`${tile}px ${tile}px`);
+    repeats.push("repeat");
+  }
   // на закреплённой плашке поверх фона лежит белый текст: светлые фоны
   // (Platinum, Ivory White) без затемнения сделали бы его нечитаемым
-  if (scrim && bg) layers.push("linear-gradient(rgba(9,9,12,0.5), rgba(9,9,12,0.5))");
-  return { backgroundImage: layers.length ? `${layers.join(", ")}, ${base}` : base };
+  if (scrim && textured) {
+    layers.push("linear-gradient(rgba(9,9,12,0.5), rgba(9,9,12,0.5))");
+    sizes.push("cover");
+    repeats.push("no-repeat");
+  }
+  layers.push(backgroundCss(bg, tint));
+  sizes.push("cover");
+  repeats.push("no-repeat");
+  return {
+    backgroundImage: layers.join(", "),
+    backgroundSize: sizes.join(", "),
+    backgroundRepeat: repeats.join(", "),
+    backgroundPosition: "center",
+    backgroundColor: textured ? backgroundTint(bg) : undefined,
+  };
 }
 
 /** Telegram-style pin, used on the cards and the pinned strip. */
@@ -833,7 +855,7 @@ export default function Inventory() {
                     </span>
                     {patternOf(active.pattern) && (
                       <span className="rounded-lg bg-white/[0.055] px-2 py-1 text-[10px] font-bold text-white/40">
-                        узор · {patternOf(active.pattern)!.glyph} {patternOf(active.pattern)!.name}
+                        узор · {patternOf(active.pattern)!.name}
                       </span>
                     )}
                   </div>

@@ -1,50 +1,69 @@
 /**
  * Узоры подарков — как в Телеграме.
  *
- * У улучшенного подарка в Телеграме на фоне лежит узор (symbol): мелкий
- * повторяющийся знак — сердце, звезда, полумесяц, череп. Названия взяты из
- * настоящего каталога (telegifter.ru/gifts/rarest-symbol: Hearts, Ace Of
- * Hearts, Half Moon, Starflower, Skull…); там их 718, здесь — те, что можно
- * нарисовать знаком шрифта, без картинок.
+ * В настоящем Телеграме у подарка на фоне лежит узор (symbol): монохромный
+ * знак, повторённый плиткой по всей площади — «тиснение» поверх цвета фона.
+ * Раньше здесь были текстовые символы, теперь — отдельные картинки-тайлы в
+ * `public/patterns/<id>.svg` (базовый набор) или `.webp` (импорт из скрапера).
  *
- * Узор намеренно мелкий и бледный: он должен читаться как тиснение на ткани, а
- * не спорить с подарком. Поэтому в наборе только настоящие знаки — никаких
- * точек, квадратов и колец: крупная геометрия на фоне выглядит как горошек.
+ * Импорт настоящих паттернов Telegram (скачанных gift-parser.py в папку
+ * `<Collection>_patterns/` с PNG-файлами символов):
+ *   node scripts/build-patterns.mjs "C:\путь\к\Plushpepe_patterns"
+ * Скрипт конвертирует PNG → webp и печатает строки для PALETTE ниже.
  *
- * Деления на «редкий/эпический» у узоров нет: узор выпадает чистым случаем.
+ * Идентификаторы сохранены, поэтому узоры уже выданных подарков остаются
+ * на месте. Фон и узор выпадают чистым случаем, у всех равный шанс.
  */
 
-export type GiftPattern = { id: string; name: string; glyph: string };
+export type GiftPattern = {
+  id: string;
+  name: string;
+  /** Путь к тайлу узора с учётом base (`/` или `/telegUP/`). */
+  src: string;
+};
 
-/** `[id, название, знак]` — по строке на узор. Знаки одноцветные (не эмодзи). */
-const LIST: [string, string, string][] = [
-  ["hearts", "Hearts", "♥"],
-  ["ace-of-hearts", "Ace Of Hearts", "♠"],
-  ["club", "Club", "♣"],
-  ["diamond", "Diamond", "♦"],
-  ["star", "Star", "★"],
-  ["starflower", "Starflower", "✾"],
-  ["sparkle", "Sparkle", "✦"],
-  ["flower", "Flower", "✿"],
-  ["half-moon", "Half Moon", "☾"],
-  ["sun", "Sun", "☀"],
-  ["cloud", "Cloud", "☁"],
-  ["lightning", "Lightning", "⚡"],
-  ["snowflake", "Snowflake", "❄"],
-  ["clover", "Clover", "☘"],
-  ["skull", "Skull", "☠"],
-  ["cross", "Cross", "✝"],
-  ["balance", "Balance", "☯"],
-  ["scales", "Scales", "⚖"],
-  ["crown", "Crown", "♛"],
-  ["sword", "Sword", "⚔"],
-  ["anchor", "Anchor", "⚓"],
-  ["flag", "Flag", "⚑"],
-  ["note", "Music Note", "♪"],
-  ["notes", "Notes", "♫"],
+/** `[id, название]` — по одной строке на узор. */
+const LIST: [string, string][] = [
+  ["hearts", "Hearts"],
+  ["ace-of-hearts", "Ace Of Hearts"],
+  ["club", "Club"],
+  ["diamond", "Diamond"],
+  ["star", "Star"],
+  ["starflower", "Starflower"],
+  ["sparkle", "Sparkle"],
+  ["flower", "Flower"],
+  ["half-moon", "Half Moon"],
+  ["sun", "Sun"],
+  ["cloud", "Cloud"],
+  ["lightning", "Lightning"],
+  ["snowflake", "Snowflake"],
+  ["clover", "Clover"],
+  ["skull", "Skull"],
+  ["cross", "Cross"],
+  ["balance", "Balance"],
+  ["scales", "Scales"],
+  ["crown", "Crown"],
+  ["sword", "Sword"],
+  ["anchor", "Anchor"],
+  ["flag", "Flag"],
+  ["note", "Music Note"],
+  ["notes", "Notes"],
 ];
 
-export const PATTERNS: GiftPattern[] = LIST.map(([id, name, glyph]) => ({ id, name, glyph }));
+const BASE = import.meta.env.BASE_URL;
+
+/**
+ * Формат файла узора: по умолчанию `.svg` (базовый набор). Для импортированных
+ * из скрапера PNG-паттернов поменяйте расширение нужных записей на `.webp`
+ * (или добавьте новые строки после конвертации build-patterns.mjs).
+ */
+const ext = (id: string): string => `${BASE}patterns/${id}.svg`;
+
+export const PATTERNS: GiftPattern[] = LIST.map(([id, name]) => ({
+  id,
+  name,
+  src: ext(id),
+}));
 
 export const PATTERN_BY_ID: Record<string, GiftPattern> = Object.fromEntries(
   PATTERNS.map((p) => [p.id, p]),
@@ -58,31 +77,14 @@ export const patternOf = (id: string | undefined | null): GiftPattern | null =>
   (id ? PATTERN_BY_ID[id] ?? null : null);
 
 /**
- * Слой узора для `background-image`.
- *
- * Знак рисуется в маленьком SVG-тайле и повторяется по всей площади фона.
- * Тёмная копия чуть ниже и светлая сверху дают мягкое тиснение: узор видно,
- * но подарок остаётся главным на картинке.
+ * Слой узора для `background-image`: картинка-тайл, которая повторяется по всей
+ * площади фона. Плотность задаётся размером слоя в `Inventory.lookStyle`.
  */
 export function patternLayer(
   id: string | undefined | null,
-  { size = 14, opacity = 0.12 }: { size?: number; opacity?: number } = {},
+  _opts: { size?: number; opacity?: number } = {},
 ): string | null {
   const p = patternOf(id);
   if (!p) return null;
-  // U+FE0E — селектор текстового вида. Без него ⚡ ❄ ☀ ☯ рисуются цветными
-  // эмодзи, и узор превращается в наклейки вместо тиснения.
-  const glyph = `${p.glyph}\uFE0E`;
-  const tile = Math.round(size * 2.6);
-  const x = tile / 2;
-  const font = (dy: number, fill: string, alpha: number) =>
-    `<text x="${x}" y="${Math.round(tile / 2) + dy}" font-size="${size}" text-anchor="middle" ` +
-    `fill="${fill}" fill-opacity="${alpha}" ` +
-    `font-family="Segoe UI Symbol, Noto Sans Symbols, Apple Symbols, sans-serif">${glyph}</text>`;
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${tile}" height="${tile}" viewBox="0 0 ${tile} ${tile}">` +
-    font(1, "#000000", opacity) +
-    font(0, "#ffffff", opacity * 0.8) +
-    `</svg>`;
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+  return `url("${p.src}")`;
 }

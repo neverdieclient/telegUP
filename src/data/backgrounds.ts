@@ -1,148 +1,142 @@
 ﻿/**
- * Фоны подарков — как в Телеграме.
+ * Фоны подарков — настоящие текстуры Telegram.
  *
- * В Телеграме фон подарка — это спокойный однотонный цвет с очень мягким
- * блеском (как ткань или металл), а не узор. Названия и порядок взяты из
- * настоящего каталога фонов Telegram: Black, Onyx Black, Fire Engine,
- * Gunmetal, Caramel, Ivory White, Midnight Blue, Pure Gold, Emerald…
+ * В Телеграме фон подарка — это не градиент и не узор, а снятая с реального
+ * подарка текстура: ровный цвет с очень мягким тканевым блеском. Здесь лежат
+ * ровно те же 78 фонов: 1200×1200 PNG из каталога сплющены до 640×640 webp
+ * (`public/backgrounds/<id>.webp`), поэтому все они вместе весят около 100 КБ,
+ * не мигают при загрузке и работают офлайн.
  *
- * Здесь фон — чистый CSS: цвет плюс два мягких свечения по краям. Никаких
- * полосок, клеток, конфетти и звёздочек: только гладкий градиент. Так он
- * ничего не весит, не мигает при загрузке и работает офлайн.
+ * Пересобрать из новой папки с картинками:
+ *   node scripts/build-backgrounds.mjs "C:\путь\к\папке\с\png"
  *
  * Деления на «редкий/эпический» у фонов нет — фон выпадает чистым случаем,
  * все варианты равны.
  */
 
-export type GiftBackground = { id: string; name: string; css: string };
-
-const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
-
-/** Осветлить (amt > 0) или затемнить (amt < 0) цвет: `#3366cc`, 0.2. */
-function shade(hex: string, amt: number): string {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  const mix = (c: number) => (amt >= 0 ? c + (255 - c) * amt : c * (1 + amt));
-  return `rgb(${clamp(mix(r))} ${clamp(mix(g))} ${clamp(mix(b))})`;
-}
+export type GiftBackground = {
+  id: string;
+  name: string;
+  /** Средний цвет картинки: подложка, пока webp грузится, и база под узором. */
+  color: string;
+  /** Путь к картинке с учётом base (`/` или `/telegUP/`). */
+  src: string;
+};
 
 /**
- * Гладкий фон подарка: ровный цвет и два очень мягких пятна — чуть светлее
- * к верхнему левому краю, чуть темнее к нижнему правому.
- *
- * Разброс намеренно маленький (±6–8%): фон должен читаться как один цвет,
- * как в Телеграме. Раньше здесь был блик +26% и тень −45%, из-за этого
- * карточки выглядели как «нейросетевые» градиенты и резали глаз.
+ * `[id, название, средний цвет]` — по одной строке на фон, как в каталоге
+ * Telegram. Цвет посчитан по самой картинке, поэтому он всегда совпадает
+ * с текстурой.
  */
-function cloth(hex: string): string {
-  return [
-    `radial-gradient(130% 110% at 30% 0%, ${shade(hex, 0.06)} 0%, transparent 70%)`,
-    `radial-gradient(130% 110% at 70% 100%, ${shade(hex, -0.07)} 0%, transparent 70%)`,
-    `linear-gradient(${hex}, ${hex})`,
-  ].join(", ");
-}
-
-/** `[id, название, цвет]` — по одной строке на фон, как в каталоге Telegram. */
 const PALETTE: [string, string, string][] = [
   // ── тёмные и металлы
-  ["black", "Black", "#0d0d10"],
-  ["onyx-black", "Onyx Black", "#16161c"],
-  ["gunmetal", "Gunmetal", "#2b3439"],
-  ["battleship-grey", "Battleship Grey", "#84847f"],
-  ["steel-grey", "Steel Grey", "#71797e"],
-  ["roman-silver", "Roman Silver", "#838996"],
-  ["platinum", "Platinum", "#e5e4e2"],
-  ["moonstone", "Moonstone", "#3aa8c1"],
-  ["mystic-pearl", "Mystic Pearl", "#d8cfc7"],
-  ["ivory-white", "Ivory White", "#fffdf0"],
-  ["desert-sand", "Desert Sand", "#edc9af"],
+  ["black", "Black", "#101010"],
+  ["onyx-black", "Onyx Black", "#424242"],
+  ["gunmetal", "Gunmetal", "#394b5a"],
+  ["battleship-grey", "Battleship Grey", "#7b7b7b"],
+  ["steel-grey", "Steel Grey", "#788b99"],
+  ["roman-silver", "Roman Silver", "#9490a6"],
+  ["platinum", "Platinum", "#999999"],
+  ["moonstone", "Moonstone", "#6f989f"],
+  ["mystic-pearl", "Mystic Pearl", "#c0716d"],
+  ["ivory-white", "Ivory White", "#aaaaaa"],
+  ["desert-sand", "Desert Sand", "#998a68"],
 
   // ── красные и огненные
-  ["fire-engine", "Fire Engine", "#ce2029"],
-  ["carmine", "Carmine", "#960018"],
-  ["burgundy", "Burgundy", "#800020"],
-  ["tomato", "Tomato", "#ff6347"],
-  ["coral-red", "Coral Red", "#ff4040"],
-  ["raspberry", "Raspberry", "#e30b5d"],
-  ["strawberry", "Strawberry", "#fc5a8d"],
-  ["rosewood", "Rosewood", "#65000b"],
-  ["burnt-sienna", "Burnt Sienna", "#e97451"],
-  ["persimmon", "Persimmon", "#ec5800"],
+  ["fire-engine", "Fire Engine", "#d94c4c"],
+  ["carmine", "Carmine", "#c44844"],
+  ["burgundy", "Burgundy", "#8b4f57"],
+  ["coral-red", "Coral Red", "#d07658"],
+  ["raspberry", "Raspberry", "#d06883"],
+  ["strawberry", "Strawberry", "#c87567"],
+  ["rosewood", "Rosewood", "#9d6262"],
+  ["burnt-sienna", "Burnt Sienna", "#ca5731"],
+  ["persimmon", "Persimmon", "#d1895b"],
 
   // ── оранжевые и жёлтые
-  ["amber", "Amber", "#ffbf00"],
-  ["pure-gold", "Pure Gold", "#ffd700"],
-  ["satin-gold", "Satin Gold", "#cba135"],
-  ["old-gold", "Old Gold", "#cfb53b"],
-  ["mustard", "Mustard", "#ffdb58"],
-  ["carrot-juice", "Carrot Juice", "#f08019"],
-  ["orange", "Orange", "#ff8000"],
-  ["lemongrass", "Lemongrass", "#a8c400"],
-  ["copper", "Copper", "#b87333"],
-  ["caramel", "Caramel", "#af6e4d"],
-  ["chocolate", "Chocolate", "#7b3f00"],
-  ["chestnut", "Chestnut", "#954535"],
-  ["cappuccino", "Cappuccino", "#a67b5b"],
-  ["seal-brown", "Seal Brown", "#59260b"],
+  ["amber", "Amber", "#c49934"],
+  ["pure-gold", "Pure Gold", "#af9538"],
+  ["satin-gold", "Satin Gold", "#a48840"],
+  ["old-gold", "Old Gold", "#a7782d"],
+  ["mustard", "Mustard", "#c78a0f"],
+  ["carrot-juice", "Carrot Juice", "#cd835f"],
+  ["orange", "Orange", "#c98441"],
+  ["lemongrass", "Lemongrass", "#82a54e"],
+  ["copper", "Copper", "#b8753c"],
+  ["caramel", "Caramel", "#c78532"],
+  ["chocolate", "Chocolate", "#905845"],
+  ["chestnut", "Chestnut", "#a95c49"],
+  ["cappuccino", "Cappuccino", "#9a786f"],
+  ["seal-brown", "Seal Brown", "#554334"],
 
   // ── зелёные
-  ["emerald", "Emerald", "#50c878"],
-  ["malachite", "Malachite", "#0bda51"],
-  ["jade-green", "Jade Green", "#00a86b"],
-  ["shamrock-green", "Shamrock Green", "#009e60"],
-  ["mint-green", "Mint Green", "#98ff98"],
-  ["pistachio", "Pistachio", "#93c572"],
-  ["light-olive", "Light Olive", "#b2b76a"],
-  ["khaki-green", "Khaki Green", "#78866b"],
-  ["camo-green", "Camo Green", "#5c6b3f"],
-  ["ranger-green", "Ranger Green", "#444c38"],
-  ["rifle-green", "Rifle Green", "#414d3b"],
-  ["tactical-pine", "Tactical Pine", "#3c4d3a"],
-  ["pine-green", "Pine Green", "#01796f"],
-  ["hunter-green", "Hunter Green", "#355e3b"],
-  ["dark-green", "Dark Green", "#013220"],
-  ["feldgrau", "Feldgrau", "#4d5d53"],
-  ["gunship-green", "Gunship Green", "#4b5320"],
-  ["pacific-green", "Pacific Green", "#0f8a80"],
+  ["emerald", "Emerald", "#5bb37c"],
+  ["malachite", "Malachite", "#68a553"],
+  ["jade-green", "Jade Green", "#46b08c"],
+  ["shamrock-green", "Shamrock Green", "#6da253"],
+  ["pistachio", "Pistachio", "#7a9764"],
+  ["light-olive", "Light Olive", "#a19855"],
+  ["khaki-green", "Khaki Green", "#8c9462"],
+  ["camo-green", "Camo Green", "#648347"],
+  ["ranger-green", "Ranger Green", "#4b6443"],
+  ["rifle-green", "Rifle Green", "#5a5e48"],
+  ["tactical-pine", "Tactical Pine", "#35746a"],
+  ["pine-green", "Pine Green", "#509176"],
+  ["hunter-green", "Hunter Green", "#6b9868"],
+  ["dark-green", "Dark Green", "#3b5437"],
+  ["feldgrau", "Feldgrau", "#797979"],
+  ["gunship-green", "Gunship Green", "#4a775d"],
+  ["pacific-green", "Pacific Green", "#59af8c"],
 
   // ── синие и голубые
-  ["midnight-blue", "Midnight Blue", "#191970"],
-  ["navy-blue", "Navy Blue", "#0a1a4a"],
-  ["cobalt-blue", "Cobalt Blue", "#0047ab"],
-  ["sapphire", "Sapphire", "#0f52ba"],
-  ["azure-blue", "Azure Blue", "#007fff"],
-  ["french-blue", "French Blue", "#0072bb"],
-  ["marine-blue", "Marine Blue", "#01386a"],
-  ["indigo-dye", "Indigo Dye", "#00416a"],
-  ["celtic-blue", "Celtic Blue", "#246bce"],
-  ["sky-blue", "Sky Blue", "#87ceeb"],
-  ["silver-blue", "Silver Blue", "#7c9cb8"],
-  ["neon-blue", "Neon Blue", "#1f51ff"],
-  ["pacific-cyan", "Pacific Cyan", "#1ca9c9"],
-  ["deep-cyan", "Deep Cyan", "#0b8f8f"],
-  ["turquoise", "Turquoise", "#40e0d0"],
-  ["aquamarine", "Aquamarine", "#7fffd4"],
+  ["midnight-blue", "Midnight Blue", "#46576b"],
+  ["navy-blue", "Navy Blue", "#6586ce"],
+  ["cobalt-blue", "Cobalt Blue", "#5976bd"],
+  ["sapphire", "Sapphire", "#558ec7"],
+  ["azure-blue", "Azure Blue", "#529cbe"],
+  ["french-blue", "French Blue", "#4d84ad"],
+  ["marine-blue", "Marine Blue", "#45578c"],
+  ["indigo-dye", "Indigo Dye", "#486d88"],
+  ["celtic-blue", "Celtic Blue", "#3e9ee2"],
+  ["sky-blue", "Sky Blue", "#55a0c3"],
+  ["silver-blue", "Silver Blue", "#6c90ab"],
+  ["neon-blue", "Neon Blue", "#6e7cf0"],
+  ["pacific-cyan", "Pacific Cyan", "#47aaaf"],
+  ["deep-cyan", "Deep Cyan", "#2aa2a1"],
+  ["turquoise", "Turquoise", "#4da99e"],
+  ["aquamarine", "Aquamarine", "#52ada4"],
 
   // ── фиолетовые и розовые
-  ["purple", "Purple", "#7d26cd"],
-  ["grape", "Grape", "#6f2da8"],
-  ["lavender", "Lavender", "#b57edc"],
-  ["dark-lilac", "Dark Lilac", "#6a3f8f"],
-  ["english-violet", "English Violet", "#563c5c"],
-  ["french-violet", "French Violet", "#8806ce"],
-  ["electric-purple", "Electric Purple", "#bf00ff"],
-  ["electric-indigo", "Electric Indigo", "#6f00ff"],
-  ["fandango", "Fandango", "#b53389"],
-  ["mexican-pink", "Mexican Pink", "#e4007c"],
-  ["cyberpunk", "Cyberpunk", "#b400ff"],
+  ["purple", "Purple", "#9d5797"],
+  ["grape", "Grape", "#8463ac"],
+  ["lavender", "Lavender", "#a56ed0"],
+  ["dark-lilac", "Dark Lilac", "#9a6b90"],
+  ["english-violet", "English Violet", "#9f6ea6"],
+  ["french-violet", "French Violet", "#aa58db"],
+  ["electric-purple", "Electric Purple", "#af68cc"],
+  ["electric-indigo", "Electric Indigo", "#826fe5"],
+  ["fandango", "Fandango", "#c76fa1"],
+  ["mexican-pink", "Mexican Pink", "#d75782"],
+  ["cyberpunk", "Cyberpunk", "#8477e0"],
 ];
 
-export const BACKGROUNDS: GiftBackground[] = PALETTE.map(([id, name, hex]) => ({
+/**
+ * Иды, которые были в наборе до перехода на настоящие текстуры (Tomato и
+ * Mint Green в каталоге картинок нет). Старые сохранения переносим на близкий
+ * по цвету фон, чтобы подарок не менял вид после обновления.
+ */
+const LEGACY_IDS: Record<string, string> = {
+  tomato: "coral-red",
+  "mint-green": "pistachio",
+};
+
+const BASE = import.meta.env.BASE_URL;
+
+export const BACKGROUNDS: GiftBackground[] = PALETTE.map(([id, name, color]) => ({
   id,
   name,
-  css: cloth(hex),
+  color,
+  src: `${BASE}backgrounds/${id}.webp`,
 }));
 
 export const BACKGROUND_BY_ID: Record<string, GiftBackground> = Object.fromEntries(
@@ -153,12 +147,18 @@ export const BACKGROUND_BY_ID: Record<string, GiftBackground> = Object.fromEntri
 export const rollBackground = (): GiftBackground =>
   BACKGROUNDS[Math.floor(Math.random() * BACKGROUNDS.length)];
 
-export const backgroundOf = (id: string | undefined | null): GiftBackground | null =>
-  (id ? BACKGROUND_BY_ID[id] ?? null : null);
+export const backgroundOf = (id: string | undefined | null): GiftBackground | null => {
+  if (!id) return null;
+  return BACKGROUND_BY_ID[id] ?? BACKGROUND_BY_ID[LEGACY_IDS[id]] ?? null;
+};
 
-/** Готовая подложка для карточки: фон, а без фона — прежний тинт подарка. */
+/** Готовый слой `background-image`: картинка фона или прежний тинт подарка. */
 export const backgroundCss = (id: string | undefined | null, tint = "#9aa3ad"): string => {
   const bg = backgroundOf(id);
-  if (bg) return bg.css;
+  if (bg) return `url("${bg.src}")`;
   return `radial-gradient(120% 105% at 50% 5%, ${tint}2e, #0e0e12 72%)`;
 };
+
+/** Цвет-подложка под картинкой: виден, пока webp не загрузился. */
+export const backgroundTint = (id: string | undefined | null, tint = "#0e0e12"): string =>
+  backgroundOf(id)?.color ?? tint;
