@@ -147,7 +147,14 @@ export function AssetPreloader() {
 
         <button
           type="button"
-          onClick={() => setState((s) => (s.phase === "loading" ? { ...s, phase: "background" } : s))}
+          onClick={() => {
+            try {
+              localStorage.setItem(DONE_KEY, "1");
+            } catch {
+              /* ignore */
+            }
+            setState((s) => (s.phase === "loading" ? { ...s, phase: "background" } : s));
+          }}
           className="mt-6 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[12px] font-bold text-white/60 hover:bg-white/10 hover:text-white"
         >
           Пропустить

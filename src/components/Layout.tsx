@@ -433,7 +433,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={onClose}
           />
-          <motion.aside
+          <motion.div
             initial={{ x: "-100%" }}
             animate={{ x: 0 }}
             exit={{ x: "-100%" }}
@@ -510,7 +510,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
                 </div>
               )}
             </nav>
-          </motion.aside>
+          </motion.div>
         </div>
       )}
     </AnimatePresence>
