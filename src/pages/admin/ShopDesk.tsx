@@ -28,6 +28,7 @@ export function GiftShopDesk() {
   const setAdmin = useGame((s) => s.setAdmin);
   const discount = admin.discount;
 
+  const toast = useGame((s) => s.toast);
   const rows: { key: "giftBuyEnabled" | "giftUpgradesEnabled"; title: string; on: string; off: string }[] = [
     {
       key: "giftBuyEnabled",
@@ -54,7 +55,15 @@ export function GiftShopDesk() {
               const next = !on;
               setAdmin({ [row.key]: next });
               logAdmin("магазин", `${row.title}: ${next ? "включено" : "выключено"}`);
-              void saveGiftAppConfig({ [row.key]: next });
+              void saveGiftAppConfig({ [row.key]: next }).then((r) => {
+                if (r.error) {
+                  toast({
+                    kind: "error",
+                    title: "Не сохранилось для всех",
+                    message: "Примени supabase/app-config.sql и войди как владелец — иначе настройка только локальная",
+                  });
+                }
+              });
             }}
             className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
               on ? "border-neon/35 bg-neon/[0.08]" : "border-white/8 bg-black/30 hover:bg-white/[0.04]"
@@ -105,6 +114,7 @@ export function GiftShopDesk() {
 function UpgradeOnlyDesk() {
   const admin = useGame((s) => s.admin);
   const setAdmin = useGame((s) => s.setAdmin);
+  const toast = useGame((s) => s.toast);
   const gifts = useAllGifts();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -130,7 +140,15 @@ function UpgradeOnlyDesk() {
   const banned = new Set(upgradeOnly);
   const persist = (next: string[]) => {
     setAdmin({ upgradeOnly: next });
-    void saveGiftAppConfig({ upgradeOnly: next });
+    void saveGiftAppConfig({ upgradeOnly: next }).then((r) => {
+      if (r.error) {
+        toast({
+          kind: "error",
+          title: "Не сохранилось для всех",
+          message: "Примени supabase/app-config.sql и войди как владелец — иначе ограничение только локальное",
+        });
+      }
+    });
   };
   const toggle = (slug: string) => {
     const next = banned.has(slug)
