@@ -23,21 +23,10 @@ create policy "app_config readable"
   on public.app_config for select
   using (true);
 
--- менять может только владелец (по email аккаунта)
+-- менять может только владелец (по email из JWT, доступно в RLS без auth.users)
 drop policy if exists "app_config owner update" on public.app_config;
 create policy "app_config owner update"
   on public.app_config for update
-  using (
-    exists (
-      select 1 from auth.users u
-      where u.id = auth.uid()
-        and lower(u.email) = 'oleg123456789123456@gmail.com'
-    )
-  )
-  with check (
-    exists (
-      select 1 from auth.users u
-      where u.id = auth.uid()
-        and lower(u.email) = 'oleg123456789123456@gmail.com'
-    )
-  );
+  to authenticated
+  using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'oleg123456789123456@gmail.com')
+  with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'oleg123456789123456@gmail.com');

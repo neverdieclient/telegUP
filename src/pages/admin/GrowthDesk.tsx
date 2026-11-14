@@ -35,20 +35,26 @@ export function PromoDesk() {
     if (busy) return;
     setBusy(true);
     try {
-      const promo = await createPromo({
+      const res = await createPromo({
         kind,
         amount: Number(amount) || 1,
         uses: Number(uses) || 1,
         note: note.trim() || undefined,
       });
-      if (!promo) {
-        toast({ kind: "error", title: "Не удалось создать", message: "Нужен доступ владельца и применённый SQL (promo-codes.sql)" });
+      if (!res.promo) {
+        toast({
+          kind: "error",
+          title: "Не удалось создать",
+          message: res.error
+            ? `${res.error}. Проверь, что применён исправленный promo-codes.sql и вход под владельцем.`
+            : "Нужен доступ владельца и применённый SQL (promo-codes.sql)",
+        });
         return;
       }
       await refresh();
       setNote("");
-      void navigator.clipboard?.writeText(promo.code).catch(() => undefined);
-      toast({ kind: "success", title: promo.code, message: "Код скопирован в буфер обмена" });
+      void navigator.clipboard?.writeText(res.promo.code).catch(() => undefined);
+      toast({ kind: "success", title: res.promo.code, message: "Код скопирован в буфер обмена" });
     } finally {
       setBusy(false);
     }
@@ -127,7 +133,11 @@ export function PromoDesk() {
               <button
                 onClick={() => {
                   void (async () => {
-                    await deletePromo(p.code);
+                    const res = await deletePromo(p.code);
+                    if (res.error) {
+                      toast({ kind: "error", title: "Не удалилось", message: res.error });
+                      return;
+                    }
                     await refresh();
                   })();
                 }}

@@ -69,8 +69,8 @@ export async function createPromo(input: {
   amount: number;
   uses: number;
   note?: string;
-}): Promise<Promo | null> {
-  if (!supabase) return null;
+}): Promise<{ promo?: Promo; error?: string }> {
+  if (!supabase) return { error: "Нет подключения к Supabase" };
   const promo: Promo = {
     code: generatePromoCode(),
     kind: input.kind,
@@ -86,14 +86,15 @@ export async function createPromo(input: {
     uses_left: promo.usesLeft,
     note: promo.note ?? null,
   });
-  if (error) return null;
-  return promo;
+  if (error) return { error: error.message };
+  return { promo };
 }
 
-export async function deletePromo(code: string): Promise<boolean> {
-  if (!supabase) return false;
+export async function deletePromo(code: string): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Нет подключения к Supabase" };
   const { error } = await supabase.from("promo_codes").delete().eq("code", code);
-  return !error;
+  if (error) return { error: error.message };
+  return {};
 }
 
 /** Атомарная активация на сервере (проверка, списание, защита от повтора). */

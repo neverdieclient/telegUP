@@ -60,7 +60,7 @@ export function GiftShopDesk() {
                   toast({
                     kind: "error",
                     title: "Не сохранилось для всех",
-                    message: "Примени supabase/app-config.sql и войди как владелец — иначе настройка только локальная",
+                    message: `${r.error}. Примени исправленный supabase/app-config.sql и войди как владелец.`,
                   });
                 }
               });
@@ -145,7 +145,7 @@ function UpgradeOnlyDesk() {
         toast({
           kind: "error",
           title: "Не сохранилось для всех",
-          message: "Примени supabase/app-config.sql и войди как владелец — иначе ограничение только локальное",
+          message: `${r.error}. Примени исправленный supabase/app-config.sql и войди как владелец.`,
         });
       }
     });

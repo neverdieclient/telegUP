@@ -30,37 +30,22 @@ create policy "promo_codes readable"
   to authenticated
   using (true);
 
--- создавать/удалять/править коды может только владелец
+-- создавать/удалять/править коды может только владелец (email из JWT)
 drop policy if exists "promo_codes owner write" on public.promo_codes;
 create policy "promo_codes owner write"
   on public.promo_codes for all
   to authenticated
-  using (
-    exists (
-      select 1 from auth.users u
-      where u.id = auth.uid()
-        and lower(u.email) = 'oleg123456789123456@gmail.com'
-    )
-  )
-  with check (
-    exists (
-      select 1 from auth.users u
-      where u.id = auth.uid()
-        and lower(u.email) = 'oleg123456789123456@gmail.com'
-    )
-  );
+  using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'oleg123456789123456@gmail.com')
+  with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'oleg123456789123456@gmail.com');
 
--- записи активаций видит владелец (и сам пользователь при желании можно расширить)
+-- записи активаций видит владелец и сам пользователь
 drop policy if exists "promo_redemptions owner read" on public.promo_redemptions;
 create policy "promo_redemptions owner read"
   on public.promo_redemptions for select
   to authenticated
   using (
-    auth.uid() = user_id or exists (
-      select 1 from auth.users u
-      where u.id = auth.uid()
-        and lower(u.email) = 'oleg123456789123456@gmail.com'
-    )
+    auth.uid() = user_id
+    or lower(coalesce(auth.jwt() ->> 'email', '')) = 'oleg123456789123456@gmail.com'
   );
 
 -- Атомарная активация: проверяет код, лимит и повтор, списывает использование
