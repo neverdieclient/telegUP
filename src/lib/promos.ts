@@ -1,14 +1,11 @@
+import { supabase } from "./supabase";
+
 /**
- * Promo codes.
+ * Глобальные промокоды (Supabase).
  *
- * The owner generates a code, the player types it in. A code is either star
- * money, TON, or days of premium; every code has a limited number of uses so a
- * leaked one cannot drain the economy.
- *
- * Storage is local on purpose (`telegup:promos:v1`): the codes are handed out
- * in the channel, and the same browser that created a code is the one that can
- * redeem it. When the owner starts handing codes to strangers, the list moves
- * into Supabase next to `shop_orders` — the shape below is already the row.
+ * Раньше коды и активации жили в localStorage — поэтому на другом аккаунте/
+ * устройстве код «не находился». Теперь список и списание использований общие,
+ * активация атомарна (RPC redeem_promo).
  */
 
 export type PromoKind = "stars" | "ton" | "premium";
@@ -24,32 +21,31 @@ export type Promo = {
   note?: string;
 };
 
-const LS_PROMOS = "telegup:promos:v1";
-const LS_REDEEMED = "telegup:promos:redeemed:v1";
+export type PromoResult =
+  | { ok: true; promo: Promo }
+  | { ok: false; reason: "empty" | "missing" | "used" | "spent" | "auth" | "offline" | "error" };
 
-function read<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
+type PromoRow = {
+  code: string;
+  kind: string;
+  amount: number;
+  uses_left: number;
+  note: string | null;
+  created_at: string;
+};
+
+function toPromo(r: PromoRow): Promo {
+  return {
+    code: r.code,
+    kind: r.kind as PromoKind,
+    amount: r.amount,
+    usesLeft: r.uses_left,
+    createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
+    note: r.note ?? undefined,
+  };
 }
 
-function write(key: string, value: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* quota */
-  }
-}
-
-export function listPromos(): Promo[] {
-  const list = read<Promo[]>(LS_PROMOS, []);
-  return Array.isArray(list) ? list : [];
-}
-
-/** `TELEGUP-XXXX`: readable over a voice call, no look-alike characters. */
+/** `TELEGUP-XXXX`: читается по звонку, без похожих символов. */
 export function generatePromoCode(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let body = "";
@@ -57,60 +53,68 @@ export function generatePromoCode(): string {
   return `TELEGUP-${body}`;
 }
 
-export function createPromo(input: { kind: PromoKind; amount: number; uses: number; note?: string }): Promo {
+export async function listPromos(): Promise<Promo[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("promo_codes")
+    .select("code,kind,amount,uses_left,note,created_at")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error || !data) return [];
+  return (data as PromoRow[]).map(toPromo);
+}
+
+export async function createPromo(input: {
+  kind: PromoKind;
+  amount: number;
+  uses: number;
+  note?: string;
+}): Promise<Promo | null> {
+  if (!supabase) return null;
   const promo: Promo = {
     code: generatePromoCode(),
     kind: input.kind,
     amount: Math.max(1, Math.round(input.amount)),
     usesLeft: Math.max(1, Math.round(input.uses)),
     createdAt: Date.now(),
-    note: input.note,
+    note: input.note?.trim() || undefined,
   };
-  write(LS_PROMOS, [promo, ...listPromos()].slice(0, 100));
+  const { error } = await supabase.from("promo_codes").insert({
+    code: promo.code,
+    kind: promo.kind,
+    amount: promo.amount,
+    uses_left: promo.usesLeft,
+    note: promo.note ?? null,
+  });
+  if (error) return null;
   return promo;
 }
 
-export function deletePromo(code: string) {
-  write(
-    LS_PROMOS,
-    listPromos().filter((p) => p.code !== code),
-  );
+export async function deletePromo(code: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("promo_codes").delete().eq("code", code);
+  return !error;
 }
 
-/** Codes this browser already used, so the same account cannot reuse one. */
-export function redeemedCodes(scope: string): string[] {
-  const map = read<Record<string, string[]>>(LS_REDEEMED, {});
-  return map[scope] ?? [];
-}
-
-export type PromoResult =
-  | { ok: true; promo: Promo }
-  | { ok: false; reason: "empty" | "missing" | "used" | "spent" };
-
-/**
- * Validate a code without granting anything.
- *
- * Separated from the granting so the store (which owns the balances) is the
- * single place that writes to an account — the same split as orders.
- */
-export function checkPromo(rawCode: string, scope: string): PromoResult {
+/** Атомарная активация на сервере (проверка, списание, защита от повтора). */
+export async function redeemPromo(rawCode: string): Promise<PromoResult> {
+  if (!supabase) return { ok: false, reason: "offline" };
   const code = rawCode.trim().toUpperCase();
   if (!code) return { ok: false, reason: "empty" };
-  const promo = listPromos().find((p) => p.code === code);
-  if (!promo) return { ok: false, reason: "missing" };
-  if (redeemedCodes(scope).includes(code)) return { ok: false, reason: "used" };
-  if (promo.usesLeft <= 0) return { ok: false, reason: "spent" };
-  return { ok: true, promo };
-}
-
-/** Burn one use of a validated code for this account. */
-export function consumePromo(code: string, scope: string) {
-  const clean = code.trim().toUpperCase();
-  write(
-    LS_PROMOS,
-    listPromos().map((p) => (p.code === clean ? { ...p, usesLeft: Math.max(0, p.usesLeft - 1) } : p)),
-  );
-  const map = read<Record<string, string[]>>(LS_REDEEMED, {});
-  map[scope] = [...(map[scope] ?? []), clean];
-  write(LS_REDEEMED, map);
+  const { data, error } = await supabase.rpc("redeem_promo", { raw_code: code });
+  if (error || !data) return { ok: false, reason: "error" };
+  const res = data as { ok: boolean; reason?: string; promo?: any };
+  if (!res.ok) return { ok: false, reason: (res.reason as PromoResult extends { ok: false; reason: infer R } ? R : never) || "error" };
+  const p = res.promo;
+  return {
+    ok: true,
+    promo: {
+      code: p.code,
+      kind: p.kind as PromoKind,
+      amount: p.amount,
+      usesLeft: p.usesLeft ?? p.uses_left ?? 0,
+      createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
+      note: p.note ?? undefined,
+    },
+  };
 }

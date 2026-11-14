@@ -49,6 +49,7 @@ export default function ProfilePage() {
   const [avatarBusy, setAvatarBusy] = useState(false);
   /** черновик промокода; чистится только после успешного погашения */
   const [promoDraft, setPromoDraft] = useState("");
+  const [promoBusy, setPromoBusy] = useState(false);
   const avatarInput = useRef<HTMLInputElement>(null);
   const myPinned = useMyPinnedGifts();
 
@@ -125,29 +126,41 @@ export default function ProfilePage() {
    * перевод причины отказа в понятный текст. Код остаётся в поле, если не
    * сработал — чтобы опечатку было видно и легко исправить.
    */
-  const applyPromo = () => {
-    const res = redeemPromo(promoDraft);
-    if (res.ok) {
-      const { promo } = res;
-      const what =
-        promo.kind === "stars"
-          ? `${promo.amount.toLocaleString("ru-RU")} ★`
-          : promo.kind === "ton"
-            ? `${promo.amount} TON`
-            : `${promo.amount} дней Premium`;
-      setPromoDraft("");
-      toast({ kind: "success", title: "Промокод принят", message: `Зачислено: ${what}` });
-      return;
+  const applyPromo = async () => {
+    if (promoBusy) return;
+    setPromoBusy(true);
+    try {
+      const res = await redeemPromo(promoDraft);
+      if (res.ok) {
+        const { promo } = res;
+        const what =
+          promo.kind === "stars"
+            ? `${promo.amount.toLocaleString("ru-RU")} ★`
+            : promo.kind === "ton"
+              ? `${promo.amount} TON`
+              : `${promo.amount} дней Premium`;
+        setPromoDraft("");
+        toast({ kind: "success", title: "Промокод принят", message: `Зачислено: ${what}` });
+        return;
+      }
+      const reason =
+        res.reason === "empty"
+          ? "Введи код"
+          : res.reason === "missing"
+            ? "Промокод не найден"
+            : res.reason === "used"
+              ? "Ты уже использовал этот код"
+              : res.reason === "spent"
+                ? "Код закончился — все использования разобрали"
+                : res.reason === "auth"
+                  ? "Нужно войти в аккаунт"
+                  : res.reason === "offline"
+                    ? "Нет подключения к серверу"
+                    : "Не удалось проверить код";
+      toast({ kind: "error", title: "Не сработало", message: reason });
+    } finally {
+      setPromoBusy(false);
     }
-    const reason =
-      res.reason === "empty"
-        ? "Введи код"
-        : res.reason === "missing"
-          ? "Такого кода нет"
-          : res.reason === "used"
-            ? "Ты уже использовал этот код"
-            : "Код закончился — все использования разобрали";
-    toast({ kind: "error", title: "Не сработало", message: reason });
   };
 
   /**
@@ -517,7 +530,7 @@ export default function ProfilePage() {
                 value={promoDraft}
                 onChange={(e) => setPromoDraft(e.target.value.toUpperCase())}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") applyPromo();
+                  if (e.key === "Enter") void applyPromo();
                 }}
                 placeholder="TELEGUP-XXXXXX"
                 spellCheck={false}

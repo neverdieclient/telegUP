@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useGame } from "../../store/useGame";
-import { createPromo, deletePromo, listPromos, type PromoKind } from "../../lib/promos";
+import { createPromo, deletePromo, listPromos, type Promo, type PromoKind } from "../../lib/promos";
 import { clearAdminLog, listAdminLog } from "../../lib/adminTools";
 import { Button } from "../../components/ui/Button";
 
@@ -19,23 +19,39 @@ const KIND_LABEL: Record<PromoKind, string> = {
 
 export function PromoDesk() {
   const toast = useGame((s) => s.toast);
-  const [promos, setPromos] = useState(listPromos);
+  const [promos, setPromos] = useState<Promo[]>([]);
   const [kind, setKind] = useState<PromoKind>("stars");
   const [amount, setAmount] = useState("500");
   const [uses, setUses] = useState("1");
   const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const make = () => {
-    const promo = createPromo({
-      kind,
-      amount: Number(amount) || 1,
-      uses: Number(uses) || 1,
-      note: note.trim() || undefined,
-    });
-    setPromos(listPromos());
-    setNote("");
-    void navigator.clipboard?.writeText(promo.code).catch(() => undefined);
-    toast({ kind: "success", title: promo.code, message: "Код скопирован в буфер обмена" });
+  const refresh = async () => setPromos(await listPromos());
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const make = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const promo = await createPromo({
+        kind,
+        amount: Number(amount) || 1,
+        uses: Number(uses) || 1,
+        note: note.trim() || undefined,
+      });
+      if (!promo) {
+        toast({ kind: "error", title: "Не удалось создать", message: "Нужен доступ владельца и применённый SQL (promo-codes.sql)" });
+        return;
+      }
+      await refresh();
+      setNote("");
+      void navigator.clipboard?.writeText(promo.code).catch(() => undefined);
+      toast({ kind: "success", title: promo.code, message: "Код скопирован в буфер обмена" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -84,8 +100,8 @@ export function PromoDesk() {
         </label>
       </div>
 
-      <Button full size="sm" onClick={make}>
-        Создать код
+      <Button full size="sm" onClick={() => void make()} disabled={busy}>
+        {busy ? "Создаём…" : "Создать код"}
       </Button>
 
       {promos.length > 0 ? (
@@ -110,8 +126,10 @@ export function PromoDesk() {
               </button>
               <button
                 onClick={() => {
-                  deletePromo(p.code);
-                  setPromos(listPromos());
+                  void (async () => {
+                    await deletePromo(p.code);
+                    await refresh();
+                  })();
                 }}
                 className="shrink-0 rounded-md border border-white/10 px-1.5 py-0.5 text-[9.5px] font-bold text-white/30 hover:text-mythic"
               >

@@ -32,7 +32,7 @@ import {
   type TonItem,
 } from "../data/store2";
 import { discountTon } from "../lib/pricing";
-import { checkPromo, consumePromo, type PromoResult } from "../lib/promos";
+import { redeemPromo as redeemPromoRemote, type PromoResult } from "../lib/promos";
 import {
   getScope,
   readAccountState,
@@ -508,7 +508,7 @@ type State = {
    * дважды (использованный код записывается на этот аккаунт) и нельзя
    * «проверить, но не забрать».
    */
-  redeemPromo: (code: string) => PromoResult;
+  redeemPromo: (code: string) => Promise<PromoResult>;
 
   /** Reorder pinned gifts by one slot (keyboard fallback for the drag). */
   movePin: (instanceId: string, dir: -1 | 1) => void;
@@ -1202,9 +1202,8 @@ export const useGame = create<State>()(
           ].slice(0, 60),
         })),
 
-      redeemPromo: (code) => {
-        const scope = get().onlineUserId ?? get().accountScope ?? "guest";
-        const res = checkPromo(code, scope);
+      redeemPromo: async (code) => {
+        const res = await redeemPromoRemote(code);
         if (!res.ok) return res;
         const { promo } = res;
 
@@ -1216,7 +1215,6 @@ export const useGame = create<State>()(
           get().grantPremiumDays(promo.amount);
         }
 
-        consumePromo(promo.code, scope);
         get().recordPurchase(`promo:${promo.code}`, `Промокод ${promo.code}`, { stars: 0, ton: 0 });
         return res;
       },
