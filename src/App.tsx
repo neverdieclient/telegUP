@@ -2,6 +2,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { lazy, Suspense, useEffect } from "react";
 import { Layout } from "./components/Layout";
 import { DeviceChooser, useDeviceScope } from "./components/DeviceChooser";
+import { AssetPreloader } from "./components/AssetPreloader";
 import { RequireAuth } from "./components/RequireAuth";
 import { RequireOpen } from "./components/RequireOpen";
 import { BannedScreen } from "./components/BannedScreen";
@@ -94,6 +95,7 @@ export default function App() {
 
   return (
     <HashRouter>
+      <AssetPreloader />
       <DeviceChooser />
       <Suspense fallback={<PageLoader />}>
         <Routes>
