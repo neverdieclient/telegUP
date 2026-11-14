@@ -5,7 +5,6 @@ import { DeviceChooser, useDeviceScope } from "./components/DeviceChooser";
 import { RequireAuth } from "./components/RequireAuth";
 import { RequireOpen } from "./components/RequireOpen";
 import { BannedScreen } from "./components/BannedScreen";
-import { ChannelGate } from "./components/ChannelGate";
 import Landing from "./pages/Landing";
 import { useGame } from "./store/useGame";
 import { applySkin, applyTheme } from "./lib/theme";
@@ -97,49 +96,44 @@ export default function App() {
     <HashRouter>
       <DeviceChooser />
       <Suspense fallback={<PageLoader />}>
-        {/* Dev-канал закрыт целиком, а не только разделом /app: посторонний
-            не должен видеть даже лендинг ранней сборки — его сразу уводит
-            на основной сайт (см. ChannelGate). */}
-        <ChannelGate>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route
-              path="/admin"
-              element={
-                <RequireAuth>
-                  <Admin />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app"
-              element={
-                <RequireAuth>
-                  <Layout />
-                </RequireAuth>
-              }
-            >
-              <Route index element={<Dashboard />} />
-              <Route path="cases" element={<RequireOpen><Cases /></RequireOpen>} />
-              <Route path="upgrade" element={<RequireOpen><UpgradePage /></RequireOpen>} />
-              <Route path="news" element={<RequireOpen><News /></RequireOpen>} />
-              <Route path="updates" element={<RequireOpen><Updates /></RequireOpen>} />
-              <Route path="market" element={<RequireOpen><Market /></RequireOpen>} />
-              <Route path="auction" element={<RequireOpen><Auction /></RequireOpen>} />
-              <Route path="leaders" element={<RequireOpen><Leaders /></RequireOpen>} />
-              <Route path="inventory" element={<Inventory />} />
-              <Route path="craft" element={<RequireOpen><Craft /></RequireOpen>} />
-              <Route path="minigames" element={<RequireOpen><MiniGames /></RequireOpen>} />
-              <Route path="shop" element={<Shop />} />
-              <Route path="premium" element={<Premium />} />
-              <Route path="ton" element={<RequireOpen><TonMarket /></RequireOpen>} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="chat" element={<Chat />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </ChannelGate>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route
+            path="/admin"
+            element={
+              <RequireAuth>
+                <Admin />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app"
+            element={
+              <RequireAuth>
+                <Layout />
+              </RequireAuth>
+            }
+          >
+            <Route index element={<Dashboard />} />
+            <Route path="cases" element={<RequireOpen><Cases /></RequireOpen>} />
+            <Route path="upgrade" element={<RequireOpen><UpgradePage /></RequireOpen>} />
+            <Route path="news" element={<RequireOpen><News /></RequireOpen>} />
+            <Route path="updates" element={<RequireOpen><Updates /></RequireOpen>} />
+            <Route path="market" element={<RequireOpen><Market /></RequireOpen>} />
+            <Route path="auction" element={<RequireOpen><Auction /></RequireOpen>} />
+            <Route path="leaders" element={<RequireOpen><Leaders /></RequireOpen>} />
+            <Route path="inventory" element={<Inventory />} />
+            <Route path="craft" element={<RequireOpen><Craft /></RequireOpen>} />
+            <Route path="minigames" element={<RequireOpen><MiniGames /></RequireOpen>} />
+            <Route path="shop" element={<Shop />} />
+            <Route path="premium" element={<Premium />} />
+            <Route path="ton" element={<RequireOpen><TonMarket /></RequireOpen>} />
+            <Route path="profile" element={<Profile />} />
+            <Route path="chat" element={<Chat />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </Suspense>
     </HashRouter>
   );

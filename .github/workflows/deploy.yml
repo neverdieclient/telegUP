@@ -35,14 +35,6 @@ jobs:
         env:
           VITE_BASE: /telegUP/
 
-      - name: Build dev channel
-        # вторая сборка того же кода: уезжает в /dev/ и открыта только владельцу
-        run: npm run build
-        env:
-          VITE_BASE: /telegUP/dev/
-          VITE_OUT_DIR: dist/dev
-          VITE_CHANNEL: dev
-
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

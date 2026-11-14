@@ -9,7 +9,6 @@ import { AdSlot } from "./AdSlot";
 import { DISCLAIMER } from "../data/gifts";
 import { Avatar } from "./profile/Cosmetics";
 import { useOwner } from "../lib/useOwner";
-import { CHANNEL_LABEL, IS_DEV_CHANNEL } from "../lib/channel";
 
 /**
  * The shell of the whole app.
@@ -172,9 +171,6 @@ function Icon({ d, className = "size-4.5" }: { d: string; className?: string }) 
   );
 }
 
-/** Dev-канал живёт в подпапке `/dev/` того же сайта (см. vite.config.ts). */
-const devSiteHref = () => `${import.meta.env.BASE_URL || "/"}dev/`;
-
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <NavLink to="/" className="flex items-center gap-2.5">
@@ -187,13 +183,6 @@ function Brand({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <span className="text-[17px] font-extrabold tracking-tight">
           teleg<span className="text-neon">UP</span>
-        </span>
-      )}
-      {/* метка канала: dev-сборка живёт на /dev/ и никогда не совпадает
-          с релизом — без подписи легко перепутать вкладки */}
-      {IS_DEV_CHANNEL && !compact && (
-        <span className="rounded-md bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-amber-300">
-          {CHANNEL_LABEL}
         </span>
       )}
     </NavLink>
@@ -271,17 +260,6 @@ function Header() {
               <p className="text-[10px] font-semibold uppercase tracking-wider text-neon/80">{profile.tier}</p>
             </div>
           </NavLink>
-          {isOwner && !IS_DEV_CHANNEL && (
-            <a
-              href={devSiteHref()}
-              title="Dev-сайт: ранние сборки, видно только владельцу"
-              className="flex items-center gap-1.5 rounded-2xl border border-amber-400/25 bg-amber-400/10 px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-300 transition hover:bg-amber-400/20 sm:px-2.5 sm:py-2 sm:text-[10.5px]"
-            >
-              <span className="size-1.5 rounded-full bg-amber-300" />
-              <span className="hidden sm:inline">dev-сайт</span>
-              <span className="sm:hidden">dev</span>
-            </a>
-          )}
           {isOwner && (
             <NavLink
               to="/admin"

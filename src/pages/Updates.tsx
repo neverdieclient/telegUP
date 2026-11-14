@@ -7,8 +7,6 @@ import { CheckMark } from "../components/ui/CheckMark";
 import { GiftArt, StarIcon } from "../components/gifts/GiftArt";
 import { Button } from "../components/ui/Button";
 import { useGame } from "../store/useGame";
-import { useOwner } from "../lib/useOwner";
-import { IS_DEV_CHANNEL } from "../lib/channel";
 
 /**
  * «Обновления» — the readable changelog plus a TikTok-style vertical slideshow
@@ -28,21 +26,6 @@ const SLIDE_MS = 3800;
 const DEMO_MS = 6400;
 /** how many entries become their own story frame before the rest are merged */
 const MAX_STORY_ENTRIES = 4;
-
-/**
- * Черновик следующего выпуска. Живёт только на dev-канале и только для
- * владельца: это рабочий блокнот, а не анонс. В ленту и в слайдшоу пункты не
- * попадают, пока версия не выйдет настоящим релизом в CHANGELOG.
- */
-const DEV_DRAFT = {
-  version: "2.1",
-  entries: [
-    "Аукцион: лоты с живой ставкой и таймером в шапке",
-    "Профиль: витрина подарков на выбор — 3 или 6 слотов",
-    "Рынок: фильтр по цене и редкости, сохранённые поиски",
-    "Звёзды: ежедневная серия входов с растущим бонусом",
-  ],
-};
 
 type Frame =
   | { kind: "cover"; release: ChangelogRelease }
@@ -668,9 +651,6 @@ const SEEN_KEY = "telegup.updates.seen";
 export default function Updates() {
   const [show, setShow] = useState(false);
   const toast = useGame((s) => s.toast);
-  const { isOwner } = useOwner();
-  // черновик — только на dev-сборке и только владельцу: игроку он не нужен
-  const draft = IS_DEV_CHANNEL && isOwner;
   const totalEntries = CHANGELOG.reduce((n, r) => n + r.entries.length, 0);
   const latest = CHANGELOG[0];
 
@@ -734,31 +714,6 @@ export default function Updates() {
           </span>
         </button>
       </header>
-
-      {draft && (
-        <section className="rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <p className="flex items-center gap-2 text-[13.5px] font-extrabold tracking-tight text-white/85">
-              Черновик {DEV_DRAFT.version}
-              <span className="rounded-md border border-white/12 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-white/45">
-                dev
-              </span>
-            </p>
-            <span className="shrink-0 text-[10px] font-bold text-white/25">видно только владельцу</span>
-          </div>
-          <ul className="mt-3 space-y-2">
-            {DEV_DRAFT.entries.map((text) => (
-              <li key={text} className="flex items-start gap-2.5 text-[12.5px] leading-relaxed text-white/55">
-                <span className="mt-[7px] size-1 shrink-0 rounded-full bg-neon/70" />
-                {text}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-[11px] leading-relaxed text-white/28">
-            В ленту и в слайдшоу пункты попадут только после релиза — сейчас их видит один владелец.
-          </p>
-        </section>
-      )}
 
       {CHANGELOG.map((release, ri) => (
         <motion.section

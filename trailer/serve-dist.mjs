@@ -1,4 +1,4 @@
-// Мини-сервер для проверки собранного сайта (dist) и dev-канала (dist/dev).
+// Мини-сервер для проверки собранного сайта (dist).
 // Нужен только локально: отдаёт статику из корня и не мешает деплою.
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";

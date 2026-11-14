@@ -7,9 +7,9 @@ import { getLocalSession, isOwnerEmail, localSignIn, verifyOwner } from "./local
  * Отладочный флаг владельца.
  *
  * `localStorage.setItem("telegup:dev-owner", "1")` открывает панели
- * владельца в локальной dev-сборке — удобно проверять админку и dev-канал
- * без входа в Supabase. В production-сборке (`import.meta.env.DEV === false`)
- * флаг не читается вообще: там единственный способ — настоящий вход.
+ * владельца в локальной dev-сборке — удобно проверять админку без входа
+ * в Supabase. В production-сборке (`import.meta.env.DEV === false`) флаг не
+ * читается вообще: там единственный способ — настоящий вход.
  */
 const DEV_OWNER_KEY = "telegup:dev-owner";
 

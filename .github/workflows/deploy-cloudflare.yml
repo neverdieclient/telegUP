@@ -47,15 +47,6 @@ jobs:
         env:
           VITE_BASE: /
 
-      - name: Build dev channel
-        # тем же артефактом уезжает и ранняя сборка: она живёт в /dev/ и
-        # открыта только владельцу (см. src/components/ChannelGate.tsx)
-        run: npm run build
-        env:
-          VITE_BASE: /dev/
-          VITE_OUT_DIR: dist/dev
-          VITE_CHANNEL: dev
-
       - name: Publish to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
